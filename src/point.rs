@@ -57,7 +57,7 @@ impl PointInterface for Point {
     // }
 
     fn dim() -> u32 {
-        128
+        96
     }
 
     fn add(&self, other: &Self) -> Self {

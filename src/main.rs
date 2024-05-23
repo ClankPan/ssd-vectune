@@ -3,11 +3,10 @@ mod tests;
 
 pub mod graph;
 pub mod point;
+pub mod original_vector_reader;
 
-use anyhow::anyhow;
 use anyhow::Result;
 use bit_set::BitSet;
-use memmap2::Mmap;
 use point::Point;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -16,59 +15,25 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
-use std::fs::File;
 use std::vec;
 use vectune::PointInterface;
+use original_vector_reader::OriginalVectorReader;
 
 type VectorIndex = usize;
 type ClusterPoint = Point;
 type PointSum = Point;
 type NumInCluster = usize;
 
+
 fn main() -> Result<()> {
-    println!("Hello, world!");
 
     let seed = 01234;
 
     /* k-meansをSSD上で行う */
     // 1. memmap
     // 2. 1つの要素ずつアクセスする関数を定義
-    struct StorageVectorReader {
-        mmap: Mmap,
-        num_vectors: usize,
-        vector_dim: usize,
-        start_offset: usize,
-    }
-    impl StorageVectorReader {
-        fn new(path: &str) -> Result<Self> {
-            let file = File::open(path)?;
-            let mmap = unsafe { Mmap::map(&file)? };
-            let num_vectors = u32::from_le_bytes(mmap[0..4].try_into()?) as usize;
-            let vector_dim = u32::from_le_bytes(mmap[4..8].try_into()?) as usize;
-            let start_offset = 8;
-
-            assert_eq!(vector_dim, Point::dim() as usize);
-
-            Ok(Self {
-                mmap,
-                num_vectors,
-                vector_dim,
-                start_offset,
-            })
-        }
-
-        fn read(&self, index: &VectorIndex) -> Result<Vec<f32>> {
-            let start = self.start_offset + index * self.vector_dim * 4;
-            let end = start + self.vector_dim * 4;
-            let bytes = &self.mmap[start..end];
-            let vector: Vec<f32> = bytemuck::try_cast_slice(bytes)
-                .map_err(|e| anyhow!("PodCastError: {:?}", e))?
-                .to_vec();
-            Ok(vector)
-        }
-    }
     let path = "deep1M.fbin";
-    let vector_reader = StorageVectorReader::new(path)?;
+    let vector_reader = OriginalVectorReader::new(path)?;
 
     // 3. k個のindexをランダムで決めて、Vec<(ClusterPoint, PointSum, NumInCluster)>
     let mut rng = SmallRng::seed_from_u64(seed);
@@ -76,13 +41,13 @@ fn main() -> Result<()> {
     let mut cluster_points: Vec<ClusterPoint> = (0..num_clusters)
         .into_iter()
         .map(|_| {
-            let random_index = rng.gen_range(0..vector_reader.num_vectors);
+            let random_index = rng.gen_range(0..vector_reader.get_num_vectors());
             let random_selected_vector = vector_reader.read(&random_index).unwrap();
             Point::from_f32_vec(random_selected_vector)
         })
         .collect();
     // 4. 全ての点に対して、first, secondのclusterを決めて、firstのPointSumに加算。Vec<(FirstLabal, SecondLabel)>
-    let mut cluster_labels = vec![(0, 0); vector_reader.num_vectors];
+    let mut cluster_labels = vec![(0, 0); vector_reader.get_num_vectors()];
     let dist_threshold = 0.5;
     let max_iter_count = 100;
 
@@ -176,9 +141,9 @@ fn main() -> Result<()> {
         // 3. idをもとにssdに書き込む。
         // 4. bitmapを持っておいて、idがtrueの時には、すでにあるedgesをdeserializeして、extend, dup。
         indexed_shard.into_par_iter().enumerate().for_each(
-            |(shard_id, (point, shard_id_edges))| {
+            |(shard_id, (_point, shard_id_edges))| {
                 let node_id = table_for_shard_id_to_node_id[shard_id as usize];
-                let edges: Vec<VectorIndex> = shard_id_edges
+                let _edges: Vec<VectorIndex> = shard_id_edges
                     .into_iter()
                     .map(|edge_shard_id| table_for_shard_id_to_node_id[edge_shard_id as usize])
                     .collect();
