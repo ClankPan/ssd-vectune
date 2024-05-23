@@ -1,156 +1,145 @@
 #[cfg(test)]
 mod tests;
 
-use std::time::SystemTime;
+pub mod graph;
+pub mod point;
 
-fn main() {
+use anyhow::anyhow;
+use anyhow::Result;
+use memmap2::Mmap;
+use point::Point;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::iter::ParallelIterator;
+use std::fs::File;
+use std::vec;
+use vectune::PointInterface;
+
+type VectorIndex = usize;
+type ClusterPoint = Point;
+type PointSum = Point;
+type NumInCluster = usize;
+
+fn main() -> Result<()> {
     println!("Hello, world!");
-}
 
+    let seed = 01234;
 
-const DIM: usize = 384;
-const DIGREE: usize = 70;
-
-type Id = u32;
-type SectorIndex = usize;
-type StoreIndex = u32;
-type CacheIndex = usize;
-type SerializedPoint = [u8; POINT_SIZE];
-type SerializedEdges = [u8; EDGES_SIZE];
-
-type Point = [f32; DIM];
-type Edges = [Id; DIGREE];
-
-const PAGE_SIZE: u64 = 64 * 1024; // 1 page is 64KiB
-const SECTOR_SIZE: usize = 1024 * 1024; // 1 MiB
-const POINT_SIZE: usize = DIM * std::mem::size_of::<f32>();
-const EDGES_SIZE: usize = DIGREE * std::mem::size_of::<u32>();
-const NODE_SIZE: usize = POINT_SIZE + EDGES_SIZE;
-const NUM_NODE_IN_SECTOR: usize = SECTOR_SIZE / NODE_SIZE;
-
-fn serialize_node<'a>(
-    point: &'a Point,
-    edges: &'a Edges,
-) -> (&'a SerializedPoint, &'a SerializedEdges) {
-    let serialize_point: &SerializedPoint = serialize_point(point);
-    let serialize_edges: &SerializedEdges = serialize_edges(edges);
-    (serialize_point, serialize_edges)
-}
-
-fn serialize_point<'a>(
-    point: &'a Point,
-) -> &'a SerializedPoint {
-    let serialize_point: &SerializedPoint = bytemuck::cast_slice(point)
-        .try_into()
-        .expect("Failed to try into &[u8; DIM*4]");
-    serialize_point
-}
-
-fn serialize_edges<'a>(
-    edges: &'a Edges,
-) -> &'a SerializedEdges {
-    let serialize_edges: &SerializedEdges = bytemuck::cast_slice(edges)
-        .try_into()
-        .expect("Failed to try into &[u8; DIGREE*4]");
-    serialize_edges
-}
-
-fn deserialize_node<'a>(
-    serialize_point: &'a SerializedPoint,
-    serialize_edges: &'a SerializedEdges,
-) -> (&'a Point, &'a Edges) {
-    let point: &Point = deserialize_point(serialize_point);
-    let edges: &Edges = deserialize_edges(serialize_edges);
-
-    (point, edges)
-}
-
-fn deserialize_point<'a>(
-    serialize_point: &'a SerializedPoint
-) -> &'a Point {
-    let point: &Point = bytemuck::try_cast_slice(serialize_point)
-        .expect("Failed to deserialize embeddings")
-        .try_into()
-        .expect("Failed to try into &[f32; DIM]");
-
-    point
-}
-
-fn deserialize_edges<'a>(
-    serialize_edges: &'a SerializedEdges,
-) -> &'a Edges {
-    let edges: &Edges = bytemuck::try_cast_slice(serialize_edges)
-        .expect("Failed to deserialize embeddings")
-        .try_into()
-        .expect("Failed to try into &[f32; DIM]");
-
-    edges
-}
-
-// offset is address of the node in a sector buffer
-fn store_index_to_sector_index_and_offset(store_index: &StoreIndex) -> (SectorIndex, usize) {
-    let sector_index = *store_index as usize / NUM_NODE_IN_SECTOR;
-    let offset = (*store_index as usize % NUM_NODE_IN_SECTOR) * NODE_SIZE;
-    (sector_index, offset)
-}
-
-
-trait Storage {
-    fn read(&self, offset: usize, dst: &mut [u8]);
-    fn write(&mut self, offset: usize, src: &[u8]);
-}
-
-struct Cache<S: Storage> {
-    cache_table: Vec<(CacheIndex, SystemTime)>,
-    cache: Vec<[u8; SECTOR_SIZE]>,
-    storage: S
-}
-
-impl<S> Cache<S>
-where
-    S: Storage,
-{   
-    fn clear(&mut self) {
-        self.cache_table = vec![(usize::MAX, SystemTime::now()); self.cache_table.len()];
-        self.cache =  vec![[0; SECTOR_SIZE]; self.cache.len()];
+    /* k-meansをSSD上で行う */
+    // 1. memmap
+    // 2. 1つの要素ずつアクセスする関数を定義
+    struct StorageVectorReader {
+        mmap: Mmap,
+        num_vectors: usize,
+        vector_dim: usize,
+        start_offset: usize,
     }
+    impl StorageVectorReader {
+        fn new(path: &str) -> Result<Self> {
+            let file = File::open(path)?;
+            let mmap = unsafe { Mmap::map(&file)? };
+            let num_vectors = u32::from_le_bytes(mmap[0..4].try_into()?) as usize;
+            let vector_dim = u32::from_le_bytes(mmap[4..8].try_into()?) as usize;
+            let start_offset = 8;
 
-    fn read_node(&mut self, store_index: &StoreIndex) -> (&Point, &Edges) {
-        let (sector_index, offset_in_sector) = store_index_to_sector_index_and_offset(store_index);
-        let sector = if self.cache_table[sector_index].0 == usize::MAX {
-            // Eviction
-            let cache_index = self.cache_table
+            Ok(Self {
+                mmap,
+                num_vectors,
+                vector_dim,
+                start_offset,
+            })
+        }
+
+        fn read(&self, index: &VectorIndex) -> Result<Vec<f32>> {
+            let start = self.start_offset + index * self.vector_dim * 4;
+            let end = start + self.vector_dim * 4;
+            let bytes = &self.mmap[start..end];
+            let vector: Vec<f32> = bytemuck::try_cast_slice(bytes)
+                .map_err(|e| anyhow!("PodCastError: {:?}", e))?
+                .to_vec();
+            Ok(vector)
+        }
+    }
+    let path = "deep1M.fbin";
+    let vector_reader = StorageVectorReader::new(path)?;
+
+    // 3. k個のindexをランダムで決めて、Vec<(ClusterPoint, PointSum, NumInCluster)>
+    let mut rng = SmallRng::seed_from_u64(seed);
+    let num_clusters: i32 = 16;
+    let cluster_points: Vec<ClusterPoint> = (0..num_clusters)
+        .into_iter()
+        .map(|_| {
+            let random_index = rng.gen_range(0..vector_reader.num_vectors);
+            let random_selected_vector = vector_reader.read(&random_index).unwrap();
+            Point::from_f32_vec(random_selected_vector)
+        })
+        .collect();
+    // 4. 全ての点に対して、first, secondのclusterを決めて、firstのPointSumに加算。Vec<(FirstLabal, SecondLabel)>
+    let mut cluster_labels = vec![(0, 0); vector_reader.num_vectors];
+    fn add_each_points(
+        a: Option<(PointSum, NumInCluster)>,
+        b: Option<(Point, NumInCluster)>,
+    ) -> Option<(PointSum, NumInCluster)> {
+        match (a, b) {
+            (Some((x_points, x_num)), Some((y_points, y_num))) => {
+                Some((x_points.add(&y_points), x_num + y_num))
+            }
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        }
+    }
+    let new_cluster_points: Vec<ClusterPoint> = cluster_labels
+        .par_iter_mut()
+        .enumerate()
+        .map(|(index, (first, second))| {
+            let vector = vector_reader.read(&index).unwrap();
+            let target_point = Point::from_f32_vec(vector);
+            let mut dists: Vec<(u8, f32)> = cluster_points
                 .iter()
                 .enumerate()
-                .min_by_key(|&(_index, (_, count))| count)
-                .unwrap()
-                .0;
-            // Write data to cache
-            let buffer = &mut self.cache[cache_index];
-            self.storage.read(sector_index * SECTOR_SIZE, buffer);
-            // Update cache table
-            self.cache_table[sector_index].0 = cache_index;
-            &self.cache[cache_index]
-        } else {
-            let cache_index = self.cache_table[sector_index].0;
-            &self.cache[cache_index]
-        };
-        // Set the time of the cache used
-        self.cache_table[sector_index].1 = SystemTime::now();
+                .map(|(cluster_label, cluster_point)| {
+                    (cluster_label as u8, cluster_point.distance(&target_point))
+                })
+                .collect();
+            dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Less));
+            *first = dists[0].0;
+            *second = dists[1].0;
+            let mut cluster_sums: Vec<Option<(PointSum, NumInCluster)>> =
+                vec![None; num_clusters as usize];
+            cluster_sums[first.clone() as usize] = Some((target_point, 1));
+            cluster_sums
+        })
+        // Only a cluster that have been updated in each iterator are added.
+        .reduce_with(|acc, vec| {
+            acc.into_iter()
+                .zip(vec.into_iter())
+                .map(|(a, b)| add_each_points(a, b))
+                .collect()
+        })
+        .unwrap()
+        .into_iter()
+        .map(|cluster_sums| {
+            let (p, n) = cluster_sums.expect("Not a single element belonging to the cluster.");
+            let ave: Vec<f32> = p.to_f32_vec().into_iter().map(|x| x / n as f32).collect();
+            Point::from_f32_vec(ave)
+        })
+        .collect();
 
-        let serialized_point: &SerializedPoint = sector[offset_in_sector..offset_in_sector + POINT_SIZE].try_into().expect("cannot convert to  &SerializedPoint");
-        let serialized_edges: &SerializedEdges = sector[offset_in_sector + POINT_SIZE..offset_in_sector + POINT_SIZE + EDGES_SIZE].try_into().expect("cannot convert to  &SerializedEdges");
-        let (point, edges) = deserialize_node(serialized_point, serialized_edges);
-        (point, edges)
-    }
+    // 5. PointSumをNumInClusterで割って、次のClusterPointを求める。　それらの差が閾値以下になった時に終了する。
+    let cluster_dists: Vec<f32> = cluster_points.into_iter().zip(&new_cluster_points).map(|(a, b)| a.distance(b)).collect();
 
-    fn write_edges(&mut self, store_index: &StoreIndex, edges: &Edges) {
-        let (sector_index, offset_in_sector) = store_index_to_sector_index_and_offset(store_index);
-        self.cache_table[sector_index].0 = usize::MAX; // This cache is no longer used
-        let serialized_edges = serialize_edges(edges);
-        let offset = sector_index * SECTOR_SIZE + offset_in_sector + POINT_SIZE; // First address of the edges
-        self.storage.write(offset, serialized_edges);
+    /* sharding */
+    // 1. a cluster labelを持つpointをlist upして、vectune::indexに渡す。
+    // 2. vectune::indexに渡すノードのindexとidとのtableを作る
+    // 3. idをもとにssdに書き込む。
+    // 4. bitmapを持っておいて、idがtrueの時には、すでにあるedgesをdeserializeして、extend, dup。
 
-        // wip: dirty_sector_table.insert(sector_index);
-    }
+    /* gordering */
+    // 1. node-idでssdから取り出すメソッドを定義する
+    // 2. 並び替えの順番をもとに、ssdに書き込む。
+
+    Ok(())
 }
