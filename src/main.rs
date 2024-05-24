@@ -2,35 +2,34 @@
 mod tests;
 
 pub mod graph;
-pub mod point;
-pub mod original_vector_reader;
 pub mod k_means;
+pub mod original_vector_reader;
+pub mod point;
 
 use anyhow::Result;
 use bit_set::BitSet;
+use k_means::on_disk_k_means;
+use original_vector_reader::{OriginalVectorReader, OriginalVectorReaderTrait};
 use point::Point;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use original_vector_reader::{OriginalVectorReader, OriginalVectorReaderTrait};
-use k_means::on_disk_k_means;
 
 type VectorIndex = usize;
 
 fn main() -> Result<()> {
-
     let seed = 01234;
 
     /* k-meansをSSD上で行う */
     // 1. memmap
     // 2. 1つの要素ずつアクセスする関数を定義
-    let path = "deep1M.fbin";
+    let path = "test_vectors/base.10M.fbin";
     let vector_reader = OriginalVectorReader::new(path)?;
 
     // 3. k個のindexをランダムで決めて、Vec<(ClusterPoint, PointSum, NumInCluster)>
     let num_clusters: u8 = 16;
-    let cluster_labels = on_disk_k_means(&vector_reader,  &num_clusters, &seed);
+    let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, &seed);
 
     /* sharding */
     // let mut node_written_ssd_bitmap = BitVec::from_elem(vector_reader.num_vectors, false);

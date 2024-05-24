@@ -1,4 +1,4 @@
-
+use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -7,15 +7,17 @@ use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 use std::vec;
 use vectune::PointInterface;
-use crate::original_vector_reader::OriginalVectorReaderTrait;
 
 type ClusterPoint = Point;
 type PointSum = Point;
 type NumInCluster = usize;
 type ClusterLabel = u8;
 
-pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(vector_reader: &R, num_clusters: &ClusterLabel, seed: &u64) -> Vec<(ClusterLabel, ClusterLabel)> {
-
+pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
+    vector_reader: &R,
+    num_clusters: &ClusterLabel,
+    seed: &u64,
+) -> Vec<(ClusterLabel, ClusterLabel)> {
     assert!(*num_clusters > 2);
 
     let mut rng = SmallRng::seed_from_u64(*seed);
@@ -31,7 +33,7 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(vector_
     let mut cluster_labels = vec![(0, 0); vector_reader.get_num_vectors()];
     let dist_threshold = 0.5;
     let max_iter_count = 100;
-    
+
     for _ in 0..max_iter_count {
         let new_cluster_points: Vec<ClusterPoint> = cluster_labels
             .par_iter_mut()
@@ -71,10 +73,10 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(vector_
                 Point::from_f32_vec(ave)
             })
             .collect();
-    
+
         // let old_cluster_points = cluster_points.clone();　cluster_points = new_cluster_points;
         let old_cluster_points = std::mem::replace(&mut cluster_points, new_cluster_points);
-    
+
         // 5. PointSumをNumInClusterで割って、次のClusterPointを求める。　それらの差が閾値以下になった時に終了する。
         let cluster_dists: Vec<f32> = old_cluster_points
             .into_iter()
@@ -104,7 +106,10 @@ fn add_each_points(
 }
 
 fn find_two_smallest(dists: &[(u8, f32)]) -> ((u8, f32), (u8, f32)) {
-    assert!(dists.len() >= 2, "The dists array must contain at least two elements.");
+    assert!(
+        dists.len() >= 2,
+        "The dists array must contain at least two elements."
+    );
 
     // Initialize smallest and second_smallest with the first two elements
     let (smallest, second_smallest) = if dists[0].1 < dists[1].1 {
@@ -114,23 +119,26 @@ fn find_two_smallest(dists: &[(u8, f32)]) -> ((u8, f32), (u8, f32)) {
     };
 
     // Fold over the rest of the elements
-    let result = dists.iter().skip(2).fold((smallest, second_smallest), |(smallest, second_smallest), &current| {
-        if current.1 < smallest.1 {
-            (current, smallest)
-        } else if current.1 < second_smallest.1 {
-            (smallest, current)
-        } else {
-            (smallest, second_smallest)
-        }
-    });
+    let result = dists.iter().skip(2).fold(
+        (smallest, second_smallest),
+        |(smallest, second_smallest), &current| {
+            if current.1 < smallest.1 {
+                (current, smallest)
+            } else if current.1 < second_smallest.1 {
+                (smallest, current)
+            } else {
+                (smallest, second_smallest)
+            }
+        },
+    );
 
     result
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{original_vector_reader::OriginalVectorReaderTrait, VectorIndex};
     use crate::k_means::on_disk_k_means;
+    use crate::{original_vector_reader::OriginalVectorReaderTrait, VectorIndex};
     use anyhow::Result;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
@@ -149,7 +157,15 @@ mod tests {
             Self {
                 num_vectors,
                 vector_dim,
-                vectors: (0..num_vectors).into_iter().map(|_| (0..vector_dim).into_iter().map(|_| rng.gen::<f32>()).collect()).collect()
+                vectors: (0..num_vectors)
+                    .into_iter()
+                    .map(|_| {
+                        (0..vector_dim)
+                            .into_iter()
+                            .map(|_| rng.gen::<f32>())
+                            .collect()
+                    })
+                    .collect(),
             }
         }
     }
@@ -158,13 +174,13 @@ mod tests {
             let vector = &self.vectors[*index];
             Ok(vector.clone())
         }
-      
+
         fn get_num_vectors(&self) -> usize {
-          self.num_vectors
+            self.num_vectors
         }
-      
+
         fn get_vector_dim(&self) -> usize {
-          self.vector_dim
+            self.vector_dim
         }
     }
 
@@ -172,7 +188,7 @@ mod tests {
     fn testing_on_disk_k_means() {
         let vector_reader = TestVectorReader::new();
         let num_clusters: u8 = 16;
-        let cluster_labels = on_disk_k_means(&vector_reader,  &num_clusters, &SEED);
+        let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, &SEED);
 
         // wip assertion
 

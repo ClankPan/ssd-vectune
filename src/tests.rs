@@ -1,5 +1,5 @@
-use crate::graph::*;
 use super::*;
+use crate::graph::*;
 
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -111,8 +111,8 @@ fn rewrite_edges() {
 
 #[test]
 fn read_original_vectors_from_storage() {
-  let path = "test_vectors/base.10M.fbin";
-  let vector_reader = OriginalVectorReader::new(path).unwrap();
-  assert_eq!(vector_reader.get_num_vectors(), 10000000); // 10 Million
-  assert_eq!(vector_reader.get_vector_dim(), 96);
+    let path = "test_vectors/base.10M.fbin";
+    let vector_reader = OriginalVectorReader::new(path).unwrap();
+    assert_eq!(vector_reader.get_num_vectors(), 10000000); // 10 Million
+    assert_eq!(vector_reader.get_vector_dim(), 96);
 }
