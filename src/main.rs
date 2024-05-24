@@ -13,7 +13,7 @@ use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use original_vector_reader::OriginalVectorReader;
+use original_vector_reader::{OriginalVectorReader, OriginalVectorReaderTrait};
 use k_means::on_disk_k_means;
 
 type VectorIndex = usize;

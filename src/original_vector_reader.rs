@@ -8,6 +8,12 @@ use std::fs::File;
 
 type VectorIndex = usize;
 
+pub trait OriginalVectorReaderTrait {
+  fn read(&self, index: &VectorIndex) -> Result<Vec<f32>>;
+  fn get_num_vectors(&self) -> usize;
+  fn get_vector_dim(&self) -> usize;
+}
+
 
 pub struct OriginalVectorReader {
   mmap: Mmap,
@@ -32,8 +38,11 @@ impl OriginalVectorReader {
           start_offset,
       })
   }
+}
 
-  pub fn read(&self, index: &VectorIndex) -> Result<Vec<f32>> {
+impl OriginalVectorReaderTrait for OriginalVectorReader {
+
+  fn read(&self, index: &VectorIndex) -> Result<Vec<f32>> {
       let start = self.start_offset + index * self.vector_dim * 4;
       let end = start + self.vector_dim * 4;
       let bytes = &self.mmap[start..end];
@@ -43,11 +52,11 @@ impl OriginalVectorReader {
       Ok(vector)
   }
 
-  pub fn get_num_vectors(&self) -> usize {
+  fn get_num_vectors(&self) -> usize {
     self.num_vectors
   }
 
-  pub fn get_vector_dim(&self) -> usize {
+  fn get_vector_dim(&self) -> usize {
     self.vector_dim
   }
 
