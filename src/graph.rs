@@ -29,14 +29,14 @@ pub fn serialize_node<'a>(
     (serialize_vector, serialize_edges)
 }
 
-pub fn serialize_vector<'a>(vector: &'a Vector) -> &'a SerializedVector {
+pub fn serialize_vector(vector: &Vector) -> &SerializedVector {
     let serialize_vector: &SerializedVector = bytemuck::cast_slice(vector)
         .try_into()
         .expect("Failed to try into &[u8; DIM*4]");
     serialize_vector
 }
 
-pub fn serialize_edges<'a>(edges: &'a Edges) -> &'a SerializedEdges {
+pub fn serialize_edges(edges: &Edges) -> &SerializedEdges {
     let serialize_edges: &SerializedEdges = bytemuck::cast_slice(edges)
         .try_into()
         .expect("Failed to try into &[u8; DIGREE*4]");
@@ -53,7 +53,7 @@ pub fn deserialize_node<'a>(
     (vector, edges)
 }
 
-pub fn deserialize_vector<'a>(serialize_vector: &'a SerializedVector) -> &'a Vector {
+pub fn deserialize_vector(serialize_vector: &SerializedVector) -> &Vector {
     let vector: &Vector = bytemuck::try_cast_slice(serialize_vector)
         .expect("Failed to deserialize embeddings")
         .try_into()
@@ -62,7 +62,7 @@ pub fn deserialize_vector<'a>(serialize_vector: &'a SerializedVector) -> &'a Vec
     vector
 }
 
-pub fn deserialize_edges<'a>(serialize_edges: &'a SerializedEdges) -> &'a Edges {
+pub fn deserialize_edges(serialize_edges: &SerializedEdges) -> &Edges {
     let edges: &Edges = bytemuck::try_cast_slice(serialize_edges)
         .expect("Failed to deserialize embeddings")
         .try_into()

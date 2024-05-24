@@ -5,7 +5,7 @@ use vectune::PointInterface;
 pub struct Point(Vec<f32>);
 impl Point {
     pub fn to_f32_vec(&self) -> Vec<f32> {
-        self.0.iter().copied().collect()
+        self.0.to_vec()
     }
     pub fn from_f32_vec(a: Vec<f32>) -> Self {
         Point(a.into_iter().collect())
@@ -64,7 +64,7 @@ impl PointInterface for Point {
         Point::from_f32_vec(
             self.to_f32_vec()
                 .into_iter()
-                .zip(other.to_f32_vec().into_iter())
+                .zip(other.to_f32_vec())
                 .map(|(x, y)| x + y)
                 .collect(),
         )

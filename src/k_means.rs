@@ -8,10 +8,10 @@ use rayon::iter::ParallelIterator;
 use std::vec;
 use vectune::PointInterface;
 
-type ClusterPoint = Point;
-type PointSum = Point;
-type NumInCluster = usize;
-type ClusterLabel = u8;
+pub type ClusterPoint = Point;
+pub type PointSum = Point;
+pub type NumInCluster = usize;
+pub type ClusterLabel = u8;
 
 pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
     vector_reader: &R,
@@ -22,7 +22,6 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
 
     let mut rng = SmallRng::seed_from_u64(*seed);
     let mut cluster_points: Vec<ClusterPoint> = (0..*num_clusters)
-        .into_iter()
         .map(|_| {
             let random_index = rng.gen_range(0..vector_reader.get_num_vectors());
             let random_selected_vector = vector_reader.read(&random_index).unwrap();
@@ -158,13 +157,7 @@ mod tests {
                 num_vectors,
                 vector_dim,
                 vectors: (0..num_vectors)
-                    .into_iter()
-                    .map(|_| {
-                        (0..vector_dim)
-                            .into_iter()
-                            .map(|_| rng.gen::<f32>())
-                            .collect()
-                    })
+                    .map(|_| (0..vector_dim).map(|_| rng.gen::<f32>()).collect())
                     .collect(),
             }
         }

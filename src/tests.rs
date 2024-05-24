@@ -1,5 +1,6 @@
 use super::*;
 use crate::graph::*;
+use crate::original_vector_reader::OriginalVectorReaderTrait;
 
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
