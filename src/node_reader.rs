@@ -29,7 +29,7 @@ pub struct GraphOnStorage {
     vector_dim: u32,
     edge_digree: u32,
     header_size: usize,
-    vector_size: usize,
+    _vector_size: usize,
     _edges_size: usize,
     node_size: usize,
 }
@@ -69,7 +69,7 @@ impl GraphOnStorage {
             vector_dim,
             edge_digree,
             header_size,
-            vector_size,
+            _vector_size: vector_size,
             _edges_size: edges_size,
             node_size,
         })
@@ -126,36 +126,6 @@ impl GraphOnStorageTrait for GraphOnStorage {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{GraphOnStorage, GraphOnStorageTrait};
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
-
-    const SEED: u64 = 123456;
-
-    #[test]
-    fn testing_graph_on_storage() {
-        let mut graph_on_stroage = GraphOnStorage::new_with_empty_file(
-            "test_vectors/test_unordered_graph",
-            1000,
-            96,
-            70 * 2,
-        )
-        .unwrap();
-
-        let mut rng = SmallRng::seed_from_u64(SEED);
-
-        let index = 10;
-        let random_vector: Vec<f32> = (0..96).map(|_| rng.gen::<f32>()).collect();
-        let random_edges: Vec<u32> = (0..70 * 2).map(|_| rng.gen::<u32>()).collect();
-        graph_on_stroage
-            .write_node(&index, &random_vector, &random_edges)
-            .unwrap();
-        let (result_vector, result_edges) = graph_on_stroage.read_node(&index).unwrap();
-        assert_eq!(random_vector, result_vector);
-        assert_eq!(random_edges, result_edges)
-    }
-}
 
 pub struct EdgesIterator<'a, G: GraphOnStorageTrait> {
     graph: &'a G,
@@ -213,5 +183,38 @@ impl<'a, G: GraphOnStorageTrait> Iterator for EdgesIterator<'a, G> {
         let result = (self.edges[self.current_position], (self.index) as u32);
         self.current_position += 1;
         Some(Ok(result))
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::{GraphOnStorage, GraphOnStorageTrait};
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
+
+    const SEED: u64 = 123456;
+
+    #[test]
+    fn testing_graph_on_storage() {
+        let mut graph_on_stroage = GraphOnStorage::new_with_empty_file(
+            "test_vectors/test_unordered_graph",
+            1000,
+            96,
+            70 * 2,
+        )
+        .unwrap();
+
+        let mut rng = SmallRng::seed_from_u64(SEED);
+
+        let index = 10;
+        let random_vector: Vec<f32> = (0..96).map(|_| rng.gen::<f32>()).collect();
+        let random_edges: Vec<u32> = (0..70 * 2).map(|_| rng.gen::<u32>()).collect();
+        graph_on_stroage
+            .write_node(&index, &random_vector, &random_edges)
+            .unwrap();
+        let (result_vector, result_edges) = graph_on_stroage.read_node(&index).unwrap();
+        assert_eq!(random_vector, result_vector);
+        assert_eq!(random_edges, result_edges)
     }
 }
