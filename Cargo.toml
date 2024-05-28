@@ -10,9 +10,13 @@ anyhow = "1.0.86"
 bit-set = "0.5.3"
 bit-vec = "0.6.3"
 bytemuck = "1.15.0"
+bytesize = "1.3.0"
+ext-sort = "0.1.4"
+indicatif = "0.17.8"
 itertools = "0.13.0"
 memmap2 = "0.9.4"
 rand = { version = "0.8", features = ["small_rng"] }
 rayon = "1.10.0"
 serde = { version = "1.0", features = ["derive"] }
-vectune = {version = "0.1.1", features = []}
+# vectune = {version = "0.1.1", features = []}
+vectune = {"path" = "../vectune", features = ["progress-bar"]}

@@ -1,7 +1,7 @@
 use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
@@ -16,11 +16,10 @@ pub type ClusterLabel = u8;
 pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
     vector_reader: &R,
     num_clusters: &ClusterLabel,
-    seed: &u64,
+    rng: &mut SmallRng,
 ) -> Vec<(ClusterLabel, ClusterLabel)> {
     assert!(*num_clusters > 2);
 
-    let mut rng = SmallRng::seed_from_u64(*seed);
     let mut cluster_points: Vec<ClusterPoint> = (0..*num_clusters)
         .map(|_| {
             let random_index = rng.gen_range(0..vector_reader.get_num_vectors());
@@ -141,7 +140,7 @@ mod tests {
     use anyhow::Result;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-    const SEED: u64 = 123456;
+    // const SEED: u64 = rand::random();
 
     struct TestVectorReader {
         num_vectors: usize,
@@ -152,7 +151,7 @@ mod tests {
         fn new() -> Self {
             let num_vectors = 1000;
             let vector_dim = 96;
-            let mut rng = SmallRng::seed_from_u64(SEED);
+            let mut rng = SmallRng::seed_from_u64(rand::random());
             Self {
                 num_vectors,
                 vector_dim,
@@ -181,7 +180,8 @@ mod tests {
     fn testing_on_disk_k_means() {
         let vector_reader = TestVectorReader::new();
         let num_clusters: u8 = 16;
-        let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, &SEED);
+        let mut rng = SmallRng::seed_from_u64(rand::random());
+        let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, &mut rng);
 
         // wip assertion
 

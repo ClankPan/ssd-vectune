@@ -6,6 +6,7 @@ use crate::VectorIndex;
 use bit_set::BitSet;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use indicatif::ProgressBar;
 
 pub fn sharded_index<
     R: OriginalVectorReaderTrait + std::marker::Sync,
@@ -20,6 +21,7 @@ pub fn sharded_index<
     let mut node_written_ssd_bitmap = BitSet::new();
 
     for cluster_label in 0..*num_clusters {
+        println!("shard: {}", cluster_label);
         // 1. a cluster labelを持つpointをlist upして、vectune::indexに渡す。
         let table_for_shard_id_to_node_id: Vec<VectorIndex> = cluster_labels
             .iter()
@@ -33,7 +35,7 @@ pub fn sharded_index<
             .collect();
         // 2. vectune::indexに渡すノードのindexとidとのtableを作る
         let (indexed_shard, start_shard_id): (Vec<(Point, Vec<u32>)>, u32) =
-            vectune::Builder::default().set_seed(seed).build(shard);
+            vectune::Builder::default().set_seed(seed).progress(ProgressBar::new(1000)).build(shard);
         let _start_node_id = table_for_shard_id_to_node_id[start_shard_id as usize];
 
         // 3. idをもとにssdに書き込む。
@@ -50,11 +52,19 @@ pub fn sharded_index<
                     })
                     .collect();
 
+                if edges.contains(&0) {
+                    println!("edges include 0 originaly")
+                }
+
                 if node_written_ssd_bitmap.contains(node_id) {
                     // 元のedgesだけ復号して、追加する
                     edges.extend(graph_on_storage.read_edges(&node_id).unwrap());
                     edges.sort();
                     edges.dedup();
+                }
+
+                if edges.contains(&0) {
+                    println!("edges include 0 after being extended")
                 }
 
                 graph_on_storage
@@ -65,4 +75,11 @@ pub fn sharded_index<
             node_written_ssd_bitmap.insert(*node_id);
         });
     }
+}
+
+// WIP:: test sharded_index
+#[cfg(test)]
+mod test {
+    #[test]
+    fn testing_sharded_index() {}
 }
