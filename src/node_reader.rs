@@ -1,10 +1,11 @@
 use crate::point::Point;
-use anyhow::anyhow;
 use anyhow::Result;
 use memmap2::MmapMut;
 use memmap2::MmapOptions;
 use std::fs::OpenOptions;
 use vectune::PointInterface;
+use crate::utils;
+
 
 type VectorIndex = usize;
 
@@ -48,8 +49,8 @@ impl GraphOnStorage {
 
         let header_size = 12;
         let vector_size = (bytemuck::cast_slice::<f32, u8>(&vec![0.1; vector_dim as usize])).len();
-        let edges_size = (bytemuck::cast_slice::<u32, u8>(&vec![1; edge_digree as usize])).len();
-        let node_size = vector_size + edges_size + 4;
+        let edges_size = (bytemuck::cast_slice::<u32, u8>(&vec![1; edge_digree as usize])).len() + 4; // the 4 byte is for Vec length
+        let node_size = vector_size + edges_size;
 
         let file_size = header_size + node_size * num_vectors as usize;
         file.set_len(file_size as u64)?;
@@ -81,17 +82,9 @@ impl GraphOnStorageTrait for GraphOnStorage {
         let end = start + self.node_size;
         let bytes = &self.mmap[start..end];
 
-        let edges_len = u32::from_ne_bytes(bytes[..4].try_into().unwrap());
-        let vector: Vec<f32> = bytemuck::try_cast_slice(&bytes[4..self.vector_size+4])
-            .map_err(|e| anyhow!("PodCastError in deserlialzing a vector: {:?}", e))?
-            .to_vec();
+        let (vector, edges) = utils::deserialize_node(bytes, self.vector_dim as usize, self.edge_digree as usize);
 
-        let edges_start = self.vector_size + 4;
-        let edges_end = edges_start + (std::cmp::min(edges_len, self.edge_digree) * 4) as usize;
-        let edges: Vec<u32> = bytemuck::try_cast_slice(&bytes[edges_start..edges_end])
-            .map_err(|e| anyhow!("PodCastError in deserlialzing edges: {:?}", e))?
-            .to_vec();
-        Ok((vector, edges))
+        Ok((vector.to_vec(), edges.to_vec()))
     }
 
     fn read_edges(&self, index: &VectorIndex) -> Result<Vec<u32>> {
@@ -99,14 +92,8 @@ impl GraphOnStorageTrait for GraphOnStorage {
         let end = start + self.node_size;
         let bytes = &self.mmap[start..end];
 
-        let edges_len = u32::from_ne_bytes(bytes[..4].try_into().unwrap());
-
-        let edges_start = self.vector_size + 4;
-        let edges_end = edges_start + (std::cmp::min(edges_len, self.edge_digree) * 4) as usize;
-        let edges: Vec<u32> = bytemuck::try_cast_slice(&bytes[edges_start..edges_end])
-            .map_err(|e| anyhow!("PodCastError in deserlialzing edges: {:?}", e))?
-            .to_vec();
-        Ok(edges)
+        let (_vector, edges) = utils::deserialize_node(bytes, self.vector_dim as usize, self.edge_digree as usize);
+        Ok(edges.to_vec())
     }
 
     fn write_node(
@@ -115,28 +102,13 @@ impl GraphOnStorageTrait for GraphOnStorage {
         vector: &Vec<f32>,
         edges: &Vec<u32>,
     ) -> Result<()> {
-        // let bytes = &self.mmap[start..end];
 
-        let serialize_vector: &[u8] = bytemuck::cast_slice(vector)
-            .try_into()
-            .expect("Failed to try into &[u8; DIM*4]");
-        let serialize_edges: &[u8] = bytemuck::cast_slice(edges)
-            .try_into()
-            .expect("Failed to try into &[u8; DIGREE*4]");
-        let serialize_edges_len = (edges.len() as u32).to_le_bytes(); 
-        let mut combined = Vec::with_capacity(serialize_vector.len() + serialize_edges.len());
-        combined.extend_from_slice(&serialize_edges_len);
-        combined.extend_from_slice(serialize_vector);
-        combined.extend_from_slice(serialize_edges);
+        let serialized_node = utils::serialize_node(vector, edges);
 
         let start = self.header_size + index * self.node_size;
-        let end = start + std::cmp::min(self.node_size, combined.len());
+        let end = start + std::cmp::min(self.node_size, serialized_node.len());
 
-        if combined.len() > self.node_size {
-            println!("combined size: {}, \nvalues: {:?}", combined.len(), edges)
-        }
-
-        self.mmap[start..end].copy_from_slice(&combined);
+        self.mmap[start..end].copy_from_slice(&serialized_node);
 
         Ok(())
     }

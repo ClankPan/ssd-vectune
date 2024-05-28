@@ -1,4 +1,4 @@
-#![feature(portable_simd)]
+// #![feature(portable_simd)]
 
 
 
@@ -11,8 +11,9 @@ pub mod node_reader;
 pub mod original_vector_reader;
 pub mod point;
 pub mod sharded_index;
+pub mod utils;
 
-use std::{io, path};
+use std::path;
 
 use anyhow::Result;
 use bit_vec::BitVec;
@@ -32,15 +33,12 @@ fn main() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(seed);
 
     /* k-meansをSSD上で行う */
-    // 1. memmap
-    // 2. 1つの要素ずつアクセスする関数を定義
     println!("reading vector file");
     let path = "test_vectors/base.10M.fbin";
     let vector_reader = OriginalVectorReader::new(path)?;
 
-    // 3. k個のindexをランダムで決めて、Vec<(ClusterPoint, PointSum, NumInCluster)>
     println!("k-menas on disk");
-    let num_clusters: u8 = 100;
+    let num_clusters: u8 = 16;
     let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, &mut rng);
 
     /* sharding */
@@ -60,10 +58,7 @@ fn main() -> Result<()> {
     );
 
     /* gordering */
-    // 1. node-idでssdから取り出すメソッドを定義する
     // 2. 並び替えの順番をもとに、ssdに書き込む。
-    // wip : gordering用のshuffleを消して、別のロジックに書き換える。
-    // backlinksを取り出す。
     println!("gordering");
     let edge_iter = EdgesIterator::new(&graph_on_stroage);
     let sorter: ExternalSorter<(u32, u32), std::io::Error, LimitedBufferBuilder> =
@@ -95,6 +90,8 @@ fn main() -> Result<()> {
         window_size,
         &mut rng,
     );
+
+    // edgeはidを指しているので、単純に書き込む場所だけを変える
 
     Ok(())
 }
