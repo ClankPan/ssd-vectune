@@ -1,15 +1,15 @@
 use crate::point::Point;
+use crate::utils;
 use anyhow::Result;
 use memmap2::MmapMut;
 use memmap2::MmapOptions;
 use std::fs::OpenOptions;
 use vectune::PointInterface;
-use crate::utils;
-
 
 type VectorIndex = usize;
 
 pub trait GraphOnStorageTrait {
+    fn read_serialized_node(&self, index: &VectorIndex) -> &[u8];
     fn read_node(&self, index: &VectorIndex) -> Result<(Vec<f32>, Vec<u32>)>;
     fn read_edges(&self, index: &VectorIndex) -> Result<Vec<u32>>;
     fn write_node(
@@ -21,6 +21,7 @@ pub trait GraphOnStorageTrait {
     fn get_num_vectors(&self) -> usize;
     fn get_vector_dim(&self) -> usize;
     fn get_edge_digree(&self) -> usize;
+    fn get_node_byte_size(&self) -> usize;
 }
 
 pub struct GraphOnStorage {
@@ -49,7 +50,8 @@ impl GraphOnStorage {
 
         let header_size = 12;
         let vector_size = (bytemuck::cast_slice::<f32, u8>(&vec![0.1; vector_dim as usize])).len();
-        let edges_size = (bytemuck::cast_slice::<u32, u8>(&vec![1; edge_digree as usize])).len() + 4; // the 4 byte is for Vec length
+        let edges_size =
+            (bytemuck::cast_slice::<u32, u8>(&vec![1; edge_digree as usize])).len() + 4; // the 4 byte is for Vec length
         let node_size = vector_size + edges_size;
 
         let file_size = header_size + node_size * num_vectors as usize;
@@ -77,12 +79,20 @@ impl GraphOnStorage {
 }
 
 impl GraphOnStorageTrait for GraphOnStorage {
+    fn read_serialized_node(&self, index: &VectorIndex) -> &[u8] {
+        let start = self.header_size + index * self.node_size;
+        let end = start + self.node_size;
+        let bytes = &self.mmap[start..end];
+        bytes
+    }
+
     fn read_node(&self, index: &VectorIndex) -> Result<(Vec<f32>, Vec<u32>)> {
         let start = self.header_size + index * self.node_size;
         let end = start + self.node_size;
         let bytes = &self.mmap[start..end];
 
-        let (vector, edges) = utils::deserialize_node(bytes, self.vector_dim as usize, self.edge_digree as usize);
+        let (vector, edges) =
+            utils::deserialize_node(bytes, self.vector_dim as usize, self.edge_digree as usize);
 
         Ok((vector.to_vec(), edges.to_vec()))
     }
@@ -92,7 +102,8 @@ impl GraphOnStorageTrait for GraphOnStorage {
         let end = start + self.node_size;
         let bytes = &self.mmap[start..end];
 
-        let (_vector, edges) = utils::deserialize_node(bytes, self.vector_dim as usize, self.edge_digree as usize);
+        let (_vector, edges) =
+            utils::deserialize_node(bytes, self.vector_dim as usize, self.edge_digree as usize);
         Ok(edges.to_vec())
     }
 
@@ -102,7 +113,6 @@ impl GraphOnStorageTrait for GraphOnStorage {
         vector: &Vec<f32>,
         edges: &Vec<u32>,
     ) -> Result<()> {
-
         let serialized_node = utils::serialize_node(vector, edges);
 
         let start = self.header_size + index * self.node_size;
@@ -124,8 +134,11 @@ impl GraphOnStorageTrait for GraphOnStorage {
     fn get_edge_digree(&self) -> usize {
         self.edge_digree as usize
     }
-}
 
+    fn get_node_byte_size(&self) -> usize {
+        self.node_size
+    }
+}
 
 pub struct EdgesIterator<'a, G: GraphOnStorageTrait> {
     graph: &'a G,
@@ -185,8 +198,6 @@ impl<'a, G: GraphOnStorageTrait> Iterator for EdgesIterator<'a, G> {
         Some(Ok(result))
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

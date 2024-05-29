@@ -36,6 +36,23 @@ impl OriginalVectorReader {
             start_offset,
         })
     }
+
+    pub fn new_with_1M(path: &str) -> Result<Self> {
+        let file = File::open(path)?;
+        let mmap = unsafe { Mmap::map(&file)? };
+        let num_vectors = 100 * 1000000; // 1 million
+        let vector_dim = u32::from_le_bytes(mmap[4..8].try_into()?) as usize;
+        let start_offset = 8;
+
+        assert_eq!(vector_dim, Point::dim() as usize);
+
+        Ok(Self {
+            mmap,
+            num_vectors,
+            vector_dim,
+            start_offset,
+        })
+    }
 }
 
 impl OriginalVectorReaderTrait for OriginalVectorReader {

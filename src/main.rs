@@ -1,23 +1,24 @@
 // #![feature(portable_simd)]
 
-
-
 #[cfg(test)]
 mod tests;
 
+pub mod cache;
 pub mod graph;
+pub mod graph_store;
 pub mod k_means;
 pub mod node_reader;
 pub mod original_vector_reader;
 pub mod point;
 pub mod sharded_index;
+pub mod storage;
 pub mod utils;
 
 use std::path;
 
 use anyhow::Result;
 use bit_vec::BitVec;
-use bytesize::MB;
+use bytesize::GB;
 use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
 use itertools::Itertools;
 use k_means::on_disk_k_means;
@@ -35,6 +36,7 @@ fn main() -> Result<()> {
     /* k-meansをSSD上で行う */
     println!("reading vector file");
     let path = "test_vectors/base.10M.fbin";
+    // 10Mだと大きすぎるので、小さなデータセットをここから作る。
     let vector_reader = OriginalVectorReader::new(path)?;
 
     println!("k-menas on disk");
@@ -91,7 +93,41 @@ fn main() -> Result<()> {
         &mut rng,
     );
 
-    // edgeはidを指しているので、単純に書き込む場所だけを変える
+    /* diskへの書き込み */
+    let file_byte_size = 10 * GB; // wip
+    let storage = graph::Storage::new_with_empty_file(
+        "./test_vectors/ordered_graph.10M.graph",
+        file_byte_size,
+    )
+    .unwrap();
+    let num_sector = (vector_reader.get_num_vectors() + window_size - 1) / window_size;
+    let mut cache = graph::Cache::new(
+        num_sector,
+        graph_on_stroage.get_vector_dim(),
+        graph_on_stroage.get_edge_digree(),
+        storage,
+    );
+
+    let sector_byte_size = window_size * graph_on_stroage.get_node_byte_size();
+    let node_byte_size = graph_on_stroage.get_node_byte_size();
+
+    reordered_node_ids
+        .chunks(window_size)
+        .enumerate()
+        .for_each(|(sector_index, node_ids)| {
+            let mut node_offset = 0;
+            let mut buffer: Vec<u8> = vec![0; sector_byte_size];
+            for node_id in node_ids {
+                let serialized_node = graph_on_stroage.read_serialized_node(&(*node_id as usize));
+                let node_offset_end = node_byte_size;
+                buffer[node_offset..node_offset_end].copy_from_slice(serialized_node);
+                node_offset = node_offset_end;
+            }
+
+            cache.write_serialized_sector(&(sector_index as u32), &buffer);
+        });
+
+    /* node_id とstore_indexの変換表を作る。 */
 
     Ok(())
 }
