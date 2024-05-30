@@ -1,18 +1,18 @@
-use super::*;
-use crate::graph::*;
-use crate::original_vector_reader::OriginalVectorReaderTrait;
+// use super::*;
+// use crate::graph::*;
+// use crate::original_vector_reader::OriginalVectorReaderTrait;
 
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
-use std::time::SystemTime;
+// use rand::rngs::SmallRng;
+// use rand::{Rng, SeedableRng};
+// use std::time::SystemTime;
 
-fn gen_random_vector(rng: &mut SmallRng) -> Vec<f32> {
-    (0..384).map(|_| rng.gen::<f32>()).collect()
-}
+// fn gen_random_vector(rng: &mut SmallRng) -> Vec<f32> {
+//     (0..384).map(|_| rng.gen::<f32>()).collect()
+// }
 
-fn gen_random_edges(rng: &mut SmallRng) -> Vec<Id> {
-    (0..70).map(|_| rng.gen::<Id>()).collect()
-}
+// fn gen_random_edges(rng: &mut SmallRng) -> Vec<Id> {
+//     (0..70).map(|_| rng.gen::<Id>()).collect()
+// }
 
 // #[test]
 // fn serializing() {

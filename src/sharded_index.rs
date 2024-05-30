@@ -1,5 +1,6 @@
 use crate::k_means::ClusterLabel;
-use crate::node_reader::GraphOnStorageTrait;
+use crate::storage::Storage;
+use crate::graph_store::GraphStore;
 use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use crate::VectorIndex;
@@ -10,10 +11,9 @@ use rayon::iter::ParallelIterator;
 
 pub fn sharded_index<
     R: OriginalVectorReaderTrait + std::marker::Sync,
-    G: GraphOnStorageTrait + std::marker::Sync + std::marker::Send,
 >(
     vector_reader: &R,
-    graph_on_storage: &mut G,
+    graph_on_storage: &GraphStore<Storage>,
     num_clusters: &ClusterLabel,
     cluster_labels: &[(ClusterLabel, ClusterLabel)],
     seed: u64,

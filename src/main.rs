@@ -3,11 +3,8 @@
 #[cfg(test)]
 mod tests;
 
-pub mod cache;
-pub mod graph;
 pub mod graph_store;
 pub mod k_means;
-pub mod node_reader;
 pub mod original_vector_reader;
 pub mod point;
 pub mod sharded_index;
@@ -22,10 +19,12 @@ use bytesize::GB;
 use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
 use itertools::Itertools;
 use k_means::on_disk_k_means;
-use node_reader::{EdgesIterator, GraphOnStorage, GraphOnStorageTrait};
+// use node_reader::{EdgesIterator, GraphOnStorage, GraphOnStorageTrait};
 use original_vector_reader::{OriginalVectorReader, OriginalVectorReaderTrait};
 use rand::{rngs::SmallRng, SeedableRng};
 use sharded_index::sharded_index;
+
+use crate::{graph_store::{GraphStore, EdgesIterator}, storage::Storage};
 
 type VectorIndex = usize;
 
@@ -45,12 +44,20 @@ fn main() -> Result<()> {
 
     /* sharding */
     println!("sharded indexing");
-    let mut graph_on_stroage = GraphOnStorage::new_with_empty_file(
-        "test_vectors/unordered_graph.10M.graph",
-        vector_reader.get_num_vectors() as u32,
-        vector_reader.get_vector_dim() as u32,
-        70 * 2,
-    )?;
+    // let mut graph_on_stroage = GraphStore::new_with_empty_file(
+    //     "test_vectors/unordered_graph.10M.graph",
+    //     vector_reader.get_num_vectors() as u32,
+    //     vector_reader.get_vector_dim() as u32,
+    //     70 * 2,
+    // )?;
+
+    let node_byte_size = (96 * 4 + 140 * 4 + 4) as usize;
+    let file_byte_size = 11 * 1000000 * node_byte_size;
+    let num_node_in_sector = 10;
+    let sector_byte_size = num_node_in_sector * node_byte_size;
+    let storage = Storage::new_with_empty_file("test_vectors/unordered_graph.10M.graph", file_byte_size as u64, sector_byte_size).unwrap();
+    let mut graph_on_stroage = GraphStore::new(vector_reader.get_num_vectors(), vector_reader.get_vector_dim(), 70 * 2, storage);
+
     sharded_index(
         &vector_reader,
         &mut graph_on_stroage,
@@ -84,7 +91,7 @@ fn main() -> Result<()> {
         |id: &u32| -> Vec<u32> { graph_on_stroage.read_edges(&(*id as usize)).unwrap() };
 
     let target_node_bit_vec = BitVec::from_elem(vector_reader.get_num_vectors(), true);
-    let window_size = 10;
+    let window_size = num_node_in_sector as usize;
     let reordered_node_ids = vectune::gorder(
         get_edges,
         get_backlinks,
@@ -95,21 +102,12 @@ fn main() -> Result<()> {
 
     /* diskへの書き込み */
     let file_byte_size = 10 * GB; // wip
-    let storage = graph::Storage::new_with_empty_file(
+    let storage = Storage::new_with_empty_file(
         "./test_vectors/ordered_graph.10M.graph",
         file_byte_size,
-    )
-    .unwrap();
-    let num_sector = (vector_reader.get_num_vectors() + window_size - 1) / window_size;
-    let mut cache = graph::Cache::new(
-        num_sector,
-        graph_on_stroage.get_vector_dim(),
-        graph_on_stroage.get_edge_digree(),
-        storage,
-    );
-
-    let sector_byte_size = window_size * graph_on_stroage.get_node_byte_size();
-    let node_byte_size = graph_on_stroage.get_node_byte_size();
+        sector_byte_size as usize,
+    ).unwrap();
+    let ordered_graph_on_storage = GraphStore::new(vector_reader.get_num_vectors(), vector_reader.get_vector_dim(), 70 * 2, storage);
 
     reordered_node_ids
         .chunks(window_size)
@@ -120,11 +118,11 @@ fn main() -> Result<()> {
             for node_id in node_ids {
                 let serialized_node = graph_on_stroage.read_serialized_node(&(*node_id as usize));
                 let node_offset_end = node_byte_size;
-                buffer[node_offset..node_offset_end].copy_from_slice(serialized_node);
+                buffer[node_offset..node_offset_end].copy_from_slice(&serialized_node);
                 node_offset = node_offset_end;
             }
 
-            cache.write_serialized_sector(&(sector_index as u32), &buffer);
+            ordered_graph_on_storage.write_serialized_sector(&sector_index, &buffer).unwrap();
         });
 
     /* node_id とstore_indexの変換表を作る。 */

@@ -8,6 +8,8 @@ pub trait StorageTrait {
     fn read(&self, offset: usize, dst: &mut [u8]);
     fn write(&self, offset: usize, src: &[u8]);
     fn sector_byte_size(&self) -> usize;
+
+    // todo grow file size
 }
 
 pub struct Storage {
@@ -43,6 +45,8 @@ impl StorageTrait for Storage {
     }
 
     fn write(&self, offset: usize, src: &[u8]) {
+        assert!(offset + src.len() < self.mmap_arc.len());
+
         let mmap_ref = Arc::clone(&self.mmap_arc);
         unsafe {
             let dest = mmap_ref.as_ptr().add(offset) as *mut u8;
@@ -53,4 +57,49 @@ impl StorageTrait for Storage {
     fn sector_byte_size(&self) -> usize {
         self.sector_byte_size
     }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use bytesize::MB;
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+    use crate::storage::{Storage, StorageTrait};
+
+    const SECTOR_BYTES_SIZE: usize = 96 * 4 + 70 * 4 + 4;
+
+    #[test]
+    fn write_and_read_byte_to_storage() {
+        let storage = Storage::new_with_empty_file("test_vectors/test.graph", 1 * MB, SECTOR_BYTES_SIZE).unwrap();
+        let original_bytes: Vec<u8> = vec![1;10];
+        let offset = 100;
+        storage.write(offset, &original_bytes);
+
+        let mut result_bytes = vec![0;10];
+        storage.read(offset, &mut result_bytes);
+
+        assert_eq!(original_bytes, result_bytes);
+    }
+
+    #[test]
+    fn par_write_byte_to_storage() {
+        let storage = Storage::new_with_empty_file("test_vectors/test.graph", 1 * MB, SECTOR_BYTES_SIZE).unwrap();
+
+
+        (0..9).into_par_iter().for_each(|i| {
+            let offset = i * 10;
+            let original_bytes: Vec<u8> = vec![i as u8;10];
+            storage.write(offset, &original_bytes)
+        });
+
+        (0..9).into_par_iter().for_each(|i| {
+            let offset = i * 10;
+            let original_bytes: Vec<u8> = vec![i as u8;10];
+            let mut result_bytes: Vec<u8> = vec![0;10];
+            storage.read(offset, &mut result_bytes);
+            assert_eq!(original_bytes, result_bytes);
+        });
+    }
+
+
 }

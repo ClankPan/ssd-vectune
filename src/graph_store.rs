@@ -9,10 +9,11 @@ type SectorIndex = usize;
 pub struct GraphStore<S: StorageTrait> {
     storage: S,
 
+    num_vectors: usize,
     vector_dim: usize,
     edge_max_digree: usize,
     num_node_in_sector: usize,
-    num_sector: usize,
+    num_sectors: usize,
     node_byte_size: usize,
 }
 
@@ -20,15 +21,18 @@ impl<S> GraphStore<S>
 where
     S: StorageTrait,
 {
-    pub fn new(num_sector: usize, vector_dim: usize, edge_max_digree: usize, storage: S) -> Self {
+    pub fn new(num_vectors: usize, vector_dim: usize, edge_max_digree: usize, storage: S) -> Self {
         let node_byte_size = vector_dim * 4 + edge_max_digree * 4 + 4;
+        let sector_byte_size = storage.sector_byte_size();
+        let num_sectors = sector_byte_size / node_byte_size;
         let num_node_in_sector: usize = storage.sector_byte_size() / node_byte_size;
         Self {
             storage,
+            num_vectors,
             vector_dim,
             edge_max_digree,
             num_node_in_sector,
-            num_sector,
+            num_sectors,
             node_byte_size,
         }
     }
@@ -66,7 +70,7 @@ where
     }
 
     pub fn write_node(
-        &mut self,
+        &self,
         store_index: &StoreIndex,
         vector: &Vec<f32>,
         edges: &Vec<u32>,
@@ -94,7 +98,16 @@ where
     //     let offset = (*store_index as usize % self.num_node_in_sector) * self.node_byte_size;
     //     (sector_index, offset)
     // }
-
+    
+    pub fn num_vectors(&self) -> usize {
+        self.num_vectors
+    }
+    pub fn num_node_in_sector(&self) -> usize {
+        self.num_node_in_sector
+    }
+    pub fn num_sectors(&self) -> usize {
+        self.num_sectors
+    }
     pub fn vector_dim(&self) -> usize {
         self.vector_dim
     }
@@ -103,5 +116,63 @@ where
     }
     pub fn node_byte_size(&self) -> usize {
         self.node_byte_size
+    }
+}
+
+pub struct EdgesIterator<'a, S: StorageTrait> {
+    graph: &'a GraphStore<S>,
+    index: StoreIndex,
+    current_position: usize,
+    edges: Vec<u32>,
+}
+
+impl<'a, S: StorageTrait> EdgesIterator<'a, S> {
+    pub fn new(graph: &'a GraphStore<S>) -> Self {
+        let edges = match graph.read_edges(&0) {
+            Ok(edges) => edges,
+            Err(_) => panic!(), // wip
+        };
+
+        EdgesIterator {
+            graph,
+            index: 0,
+            current_position: 0,
+            edges,
+        }
+    }
+}
+
+impl<'a, S: StorageTrait> Iterator for EdgesIterator<'a, S> {
+    type Item = std::result::Result<(u32, u32), std::io::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_position >= self.edges.len() {
+            // If the current position exceeds the length of the edge list, the next edge set is read
+            self.current_position = 0;
+            self.index += 1;
+
+            if self.graph.num_vectors() >= self.index {
+                return None;
+            } else {
+                match self.graph.read_edges(&self.index) {
+                    Ok(new_edges) => {
+                        if new_edges.is_empty() {
+                            return None;
+                        }
+                        self.edges = new_edges;
+                    }
+                    Err(e) => {
+                        return Some(Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e.to_string(),
+                        )))
+                    }
+                }
+            }
+        }
+
+        let result = (self.edges[self.current_position], (self.index) as u32);
+        self.current_position += 1;
+        Some(Ok(result))
     }
 }
