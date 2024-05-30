@@ -62,20 +62,21 @@ impl StorageTrait for Storage {
 #[cfg(test)]
 mod tests {
 
+    use crate::storage::{Storage, StorageTrait};
     use bytesize::MB;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
-    use crate::storage::{Storage, StorageTrait};
 
     const SECTOR_BYTES_SIZE: usize = 96 * 4 + 70 * 4 + 4;
 
     #[test]
     fn write_and_read_byte_to_storage() {
-        let storage = Storage::new_with_empty_file("test_vectors/test.graph", 1 * MB, SECTOR_BYTES_SIZE).unwrap();
-        let original_bytes: Vec<u8> = vec![1;10];
+        let storage =
+            Storage::new_with_empty_file("test_vectors/test.graph", MB, SECTOR_BYTES_SIZE).unwrap();
+        let original_bytes: Vec<u8> = vec![1; 10];
         let offset = 100;
         storage.write(offset, &original_bytes);
 
-        let mut result_bytes = vec![0;10];
+        let mut result_bytes = vec![0; 10];
         storage.read(offset, &mut result_bytes);
 
         assert_eq!(original_bytes, result_bytes);
@@ -83,23 +84,21 @@ mod tests {
 
     #[test]
     fn par_write_byte_to_storage() {
-        let storage = Storage::new_with_empty_file("test_vectors/test.graph", 1 * MB, SECTOR_BYTES_SIZE).unwrap();
-
+        let storage =
+            Storage::new_with_empty_file("test_vectors/test.graph", MB, SECTOR_BYTES_SIZE).unwrap();
 
         (0..9).into_par_iter().for_each(|i| {
             let offset = i * 10;
-            let original_bytes: Vec<u8> = vec![i as u8;10];
+            let original_bytes: Vec<u8> = vec![i as u8; 10];
             storage.write(offset, &original_bytes)
         });
 
         (0..9).into_par_iter().for_each(|i| {
             let offset = i * 10;
-            let original_bytes: Vec<u8> = vec![i as u8;10];
-            let mut result_bytes: Vec<u8> = vec![0;10];
+            let original_bytes: Vec<u8> = vec![i as u8; 10];
+            let mut result_bytes: Vec<u8> = vec![0; 10];
             storage.read(offset, &mut result_bytes);
             assert_eq!(original_bytes, result_bytes);
         });
     }
-
-
 }

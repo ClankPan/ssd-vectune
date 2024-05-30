@@ -30,15 +30,15 @@ pub fn serialize_edges(edges: &Edges) -> (&SerializedEdges, [u8; 4]) {
     (serialize_edges, serialize_edges_len)
 }
 
-pub fn deserialize_node<'a>(
-    bytes: &'a [u8],
+pub fn deserialize_node(
+    bytes: &[u8],
     vector_dim: usize,
     edge_max_digree: usize,
-) -> (&'a Vector, &'a Edges) {
+) -> (&Vector, &Edges) {
     let vector_end = vector_dim * 4;
     let edges_start = vector_end + 4;
     let edges_len = u32::from_le_bytes(bytes[vector_end..edges_start].try_into().unwrap()) as usize;
-    let edges_end = edges_start + std::cmp::min(edge_max_digree as usize, edges_len) * 4;
+    let edges_end = edges_start + std::cmp::min(edge_max_digree, edges_len) * 4;
 
     let vector: &Vector = deserialize_vector(&bytes[..vector_end]);
     let edges: &Edges = deserialize_edges(&bytes[edges_start..edges_end]);

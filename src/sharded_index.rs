@@ -1,17 +1,15 @@
-use crate::k_means::ClusterLabel;
-use crate::storage::Storage;
 use crate::graph_store::GraphStore;
+use crate::k_means::ClusterLabel;
 use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
+use crate::storage::Storage;
 use crate::VectorIndex;
 use bit_set::BitSet;
 use indicatif::ProgressBar;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 
-pub fn sharded_index<
-    R: OriginalVectorReaderTrait + std::marker::Sync,
->(
+pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
     vector_reader: &R,
     graph_on_storage: &GraphStore<Storage>,
     num_clusters: &ClusterLabel,

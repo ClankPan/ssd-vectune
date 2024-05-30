@@ -24,7 +24,10 @@ use original_vector_reader::{OriginalVectorReader, OriginalVectorReaderTrait};
 use rand::{rngs::SmallRng, SeedableRng};
 use sharded_index::sharded_index;
 
-use crate::{graph_store::{GraphStore, EdgesIterator}, storage::Storage};
+use crate::{
+    graph_store::{EdgesIterator, GraphStore},
+    storage::Storage,
+};
 
 type VectorIndex = usize;
 
@@ -55,8 +58,18 @@ fn main() -> Result<()> {
     let file_byte_size = 11 * 1000000 * node_byte_size;
     let num_node_in_sector = 10;
     let sector_byte_size = num_node_in_sector * node_byte_size;
-    let storage = Storage::new_with_empty_file("test_vectors/unordered_graph.10M.graph", file_byte_size as u64, sector_byte_size).unwrap();
-    let mut graph_on_stroage = GraphStore::new(vector_reader.get_num_vectors(), vector_reader.get_vector_dim(), 70 * 2, storage);
+    let storage = Storage::new_with_empty_file(
+        "test_vectors/unordered_graph.10M.graph",
+        file_byte_size as u64,
+        sector_byte_size,
+    )
+    .unwrap();
+    let mut graph_on_stroage = GraphStore::new(
+        vector_reader.get_num_vectors(),
+        vector_reader.get_vector_dim(),
+        70 * 2,
+        storage,
+    );
 
     sharded_index(
         &vector_reader,
@@ -91,7 +104,7 @@ fn main() -> Result<()> {
         |id: &u32| -> Vec<u32> { graph_on_stroage.read_edges(&(*id as usize)).unwrap() };
 
     let target_node_bit_vec = BitVec::from_elem(vector_reader.get_num_vectors(), true);
-    let window_size = num_node_in_sector as usize;
+    let window_size = num_node_in_sector;
     let reordered_node_ids = vectune::gorder(
         get_edges,
         get_backlinks,
@@ -105,9 +118,15 @@ fn main() -> Result<()> {
     let storage = Storage::new_with_empty_file(
         "./test_vectors/ordered_graph.10M.graph",
         file_byte_size,
-        sector_byte_size as usize,
-    ).unwrap();
-    let ordered_graph_on_storage = GraphStore::new(vector_reader.get_num_vectors(), vector_reader.get_vector_dim(), 70 * 2, storage);
+        sector_byte_size,
+    )
+    .unwrap();
+    let ordered_graph_on_storage = GraphStore::new(
+        vector_reader.get_num_vectors(),
+        vector_reader.get_vector_dim(),
+        70 * 2,
+        storage,
+    );
 
     reordered_node_ids
         .chunks(window_size)
@@ -122,7 +141,9 @@ fn main() -> Result<()> {
                 node_offset = node_offset_end;
             }
 
-            ordered_graph_on_storage.write_serialized_sector(&sector_index, &buffer).unwrap();
+            ordered_graph_on_storage
+                .write_serialized_sector(&sector_index, &buffer)
+                .unwrap();
         });
 
     /* node_id とstore_indexの変換表を作る。 */

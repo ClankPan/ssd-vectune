@@ -55,11 +55,8 @@ where
     pub fn read_node(&self, store_index: &StoreIndex) -> Result<(Vec<f32>, Vec<u32>)> {
         let bytes = self.read_serialized_node(store_index);
 
-        let (vector, edges) = utils::deserialize_node(
-            &bytes,
-            self.vector_dim as usize,
-            self.edge_max_digree as usize,
-        );
+        let (vector, edges) =
+            utils::deserialize_node(&bytes, self.vector_dim, self.edge_max_digree);
 
         Ok((vector.to_vec(), edges.to_vec()))
     }
@@ -77,16 +74,14 @@ where
     ) -> Result<()> {
         let bytes = utils::serialize_node(vector, edges);
         let offset = self.offset_from_sector_index(store_index);
-        Ok(self.storage.write(offset, &bytes))
+        self.storage.write(offset, &bytes);
+        Ok(())
     }
 
-    pub fn write_serialized_sector(
-        &self,
-        sector_index: &StoreIndex,
-        bytes: &[u8],
-    ) -> Result<()> {
+    pub fn write_serialized_sector(&self, sector_index: &StoreIndex, bytes: &[u8]) -> Result<()> {
         let offset = self.offset_from_sector_index(sector_index);
-        Ok(self.storage.write(offset, bytes))
+        self.storage.write(offset, bytes);
+        Ok(())
     }
 
     // fn store_index_to_sector_index_and_offset(
@@ -98,7 +93,7 @@ where
     //     let offset = (*store_index as usize % self.num_node_in_sector) * self.node_byte_size;
     //     (sector_index, offset)
     // }
-    
+
     pub fn num_vectors(&self) -> usize {
         self.num_vectors
     }
