@@ -6,7 +6,6 @@ type SerializedEdges = [u8];
 pub fn serialize_node(vector: &Vector, edges: &Edges) -> Vec<u8> {
     let serialize_vector: &[u8] = serialize_vector(vector);
     let (serialize_edges, serialize_edges_len) = serialize_edges(edges);
-    println!("write edges len {}", edges.len());
     let mut combined = Vec::with_capacity(serialize_vector.len() + serialize_edges.len());
     combined.extend_from_slice(serialize_vector);
     combined.extend_from_slice(&serialize_edges_len);

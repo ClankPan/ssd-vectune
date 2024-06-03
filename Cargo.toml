@@ -20,3 +20,6 @@ rayon = "1.10.0"
 serde = { version = "1.0", features = ["derive"] }
 # vectune = {version = "0.1.1", features = []}
 vectune = {"path" = "../vectune", features = ["progress-bar"]}
+
+[features]
+simd = []

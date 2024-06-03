@@ -37,6 +37,17 @@ impl Storage {
             sector_byte_size,
         })
     }
+
+    pub fn load(path: &str, sector_byte_size: usize) -> Result<Self> {
+        let file = OpenOptions::new().read(true).write(true).open(path)?;
+
+        let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
+        println!("memmap len: {}", mmap.len());
+        Ok(Self {
+            mmap_arc: Arc::new(mmap),
+            sector_byte_size,
+        })
+    }
 }
 
 impl StorageTrait for Storage {

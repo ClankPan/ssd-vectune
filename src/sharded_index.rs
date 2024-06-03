@@ -6,6 +6,8 @@ use crate::storage::Storage;
 use crate::VectorIndex;
 use bit_set::BitSet;
 use indicatif::ProgressBar;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 
@@ -37,10 +39,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
 
         // 3. idをもとにssdに書き込む。
         // 4. bitmapを持っておいて、idがtrueの時には、すでにあるedgesをdeserializeして、extend, dup。
-        indexed_shard
-            .into_iter()
-            .enumerate()
-            .for_each(|(shard_id, (point, shard_id_edges))| {
+        indexed_shard.into_par_iter().enumerate().for_each(
+            |(shard_id, (point, shard_id_edges))| {
                 let node_id = table_for_shard_id_to_node_id[shard_id];
                 let mut edges: Vec<u32> = shard_id_edges
                     .into_iter()
@@ -59,7 +59,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
                 graph_on_storage
                     .write_node(&node_id, &point.to_f32_vec(), &edges)
                     .unwrap();
-            });
+            },
+        );
         table_for_shard_id_to_node_id.iter().for_each(|node_id| {
             node_written_ssd_bitmap.insert(*node_id);
         });
@@ -81,6 +82,6 @@ fn pickup_target_nodes(
 // WIP:: test sharded_index
 #[cfg(test)]
 mod test {
-    #[test]
-    fn testing_sharded_index() {}
+    // #[test]
+    // fn testing_sharded_index() {}
 }

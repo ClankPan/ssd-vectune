@@ -8,52 +8,61 @@ use rayon::iter::ParallelIterator;
 use std::vec;
 use vectune::PointInterface;
 
+pub type VectorIndex = usize;
 pub type ClusterPoint = Point;
 pub type PointSum = Point;
 pub type NumInCluster = usize;
 pub type ClusterLabel = u8;
+pub type DistAndNode = (f32, VectorIndex);
+pub type ClosedVectorIndex = VectorIndex;
 
 pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
     vector_reader: &R,
     num_clusters: &ClusterLabel,
     rng: &mut SmallRng,
-) -> Vec<(ClusterLabel, ClusterLabel)> {
+) -> (
+    Vec<(ClusterLabel, ClusterLabel)>,
+    Vec<(ClusterPoint, ClosedVectorIndex)>,
+) {
     assert!(*num_clusters > 2);
 
-    let mut cluster_points: Vec<ClusterPoint> = (0..*num_clusters)
+    let mut cluster_points: Vec<(ClusterPoint, ClosedVectorIndex)> = (0..*num_clusters)
         .map(|_| {
             let random_index = rng.gen_range(0..vector_reader.get_num_vectors());
             let random_selected_vector = vector_reader.read(&random_index).unwrap();
-            Point::from_f32_vec(random_selected_vector)
+            (Point::from_f32_vec(random_selected_vector), random_index)
         })
         .collect();
     // 4. 全ての点に対して、first, secondのclusterを決めて、firstのPointSumに加算。Vec<(FirstLabal, SecondLabel)>
     let mut cluster_labels = vec![(0, 0); vector_reader.get_num_vectors()];
-    let dist_threshold = 0.5;
+    let dist_threshold = 0.001;
     let max_iter_count = 100;
+    let mut iter_count = 0;
 
     for _ in 0..max_iter_count {
-        let new_cluster_points: Vec<ClusterPoint> = cluster_labels
+        iter_count += 1;
+        let new_cluster_points: Vec<(ClusterPoint, ClosedVectorIndex)> = cluster_labels
             .par_iter_mut()
             .enumerate()
-            .map(|(index, (first, second))| {
+            .map(|(index, (first_label, second_label))| {
                 let vector = vector_reader.read(&index).unwrap();
                 let target_point = Point::from_f32_vec(vector);
                 let dists: Vec<(u8, f32)> = cluster_points
                     .iter()
                     .enumerate()
-                    .map(|(cluster_label, cluster_point)| {
+                    .map(|(cluster_label, (cluster_point, _))| {
                         (cluster_label as u8, cluster_point.distance(&target_point))
                     })
                     .collect();
                 // WIP: Test this assignment of mutable to *first and *second
-                let (_first, _second) = find_two_smallest(&dists);
-                *first = _first.0;
-                *second = _second.0;
+                let (first_label_and_dist, second_label_and_dist) = find_two_smallest(&dists);
+                *first_label = first_label_and_dist.0;
+                *second_label = second_label_and_dist.0;
                 let _num_clusters = *num_clusters as usize;
-                let mut cluster_sums: Vec<Option<(PointSum, NumInCluster)>> =
+                let mut cluster_sums: Vec<Option<(PointSum, NumInCluster, DistAndNode)>> =
                     vec![None; _num_clusters];
-                cluster_sums[*first as usize] = Some((target_point, 1));
+                cluster_sums[*first_label as usize] =
+                    Some((target_point, 1, (first_label_and_dist.1, index)));
                 cluster_sums
             })
             // Only a cluster that have been updated in each iterator are added.
@@ -64,11 +73,24 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
                     .collect()
             })
             .unwrap()
-            .into_iter()
+            .into_iter() // ToDo: parallel
             .map(|cluster_sums| {
-                let (p, n) = cluster_sums.expect("Not a single element belonging to the cluster.");
-                let ave: Vec<f32> = p.to_f32_vec().into_iter().map(|x| x / n as f32).collect();
-                Point::from_f32_vec(ave)
+                match cluster_sums {
+                    Some(cluster_sums) => {
+                        let (p, n, (_, closed_index)) = cluster_sums;
+                        let ave: Vec<f32> =
+                            p.to_f32_vec().into_iter().map(|x| x / n as f32).collect();
+                        // closed_indexは、実際にはPoint::from_f32_vec(ave)に近いvectorのindexとなるわけではないが、
+                        // 終了条件としてクラスターの差が閾値以下になることを前提としているので、closed_indexを利用する。
+                        (Point::from_f32_vec(ave), closed_index)
+                    }
+                    None => {
+                        // When if If none of vectors belonged to a cluster,
+                        let random_index = rng.gen_range(0..vector_reader.get_num_vectors());
+                        let random_selected_vector = vector_reader.read(&random_index).unwrap();
+                        (Point::from_f32_vec(random_selected_vector), random_index)
+                    }
+                }
             })
             .collect();
 
@@ -79,23 +101,28 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
         let cluster_dists: Vec<f32> = old_cluster_points
             .into_iter()
             .zip(&cluster_points)
-            .map(|(a, b)| a.distance(b))
+            .map(|((a, _), (b, _))| a.distance(b))
             .collect();
         if cluster_dists.iter().all(|&x| x <= dist_threshold) {
             break;
         }
     }
+    println!("k-means iter count was {}", iter_count);
 
-    cluster_labels
+    (cluster_labels, cluster_points)
 }
 
 fn add_each_points(
-    a: Option<(PointSum, NumInCluster)>,
-    b: Option<(Point, NumInCluster)>,
-) -> Option<(PointSum, NumInCluster)> {
+    a: Option<(PointSum, NumInCluster, DistAndNode)>,
+    b: Option<(Point, NumInCluster, DistAndNode)>,
+) -> Option<(PointSum, NumInCluster, DistAndNode)> {
     match (a, b) {
-        (Some((x_points, x_num)), Some((y_points, y_num))) => {
-            Some((x_points.add(&y_points), x_num + y_num))
+        (Some((x_points, x_num, x_dist_and_index)), Some((y_points, y_num, y_dist_and_index))) => {
+            Some((
+                x_points.add(&y_points),
+                x_num + y_num,
+                min_by_dist(x_dist_and_index, y_dist_and_index),
+            ))
         }
         (Some(x), None) => Some(x),
         (None, Some(y)) => Some(y),
@@ -131,6 +158,14 @@ fn find_two_smallest(dists: &[(u8, f32)]) -> ((u8, f32), (u8, f32)) {
     );
 
     result
+}
+
+fn min_by_dist(a: DistAndNode, b: DistAndNode) -> DistAndNode {
+    if a.0 < b.0 {
+        a
+    } else {
+        b
+    }
 }
 
 #[cfg(test)]
