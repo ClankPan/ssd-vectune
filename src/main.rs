@@ -12,6 +12,7 @@ pub mod sharded_index;
 pub mod single_index;
 pub mod storage;
 pub mod utils;
+pub mod cache;
 
 use std::path;
 
@@ -21,18 +22,15 @@ use bytesize::GB;
 use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
 use graph::Graph;
 use itertools::Itertools;
-use rayon::{
-    iter::{IntoParallelIterator, ParallelBridge, ParallelIterator},
-    vec,
-};
+use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 
 use k_means::on_disk_k_means;
 // use node_reader::{EdgesIterator, GraphOnStorage, GraphOnStorageTrait};
 use original_vector_reader::{OriginalVectorReader, OriginalVectorReaderTrait};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use sharded_index::sharded_index;
-use single_index::single_index;
-use vectune::{GraphInterface, PointInterface};
+// use single_index::single_index;
+use vectune::PointInterface;
 
 use crate::{
     graph_store::{EdgesIterator, GraphStore},
@@ -291,11 +289,11 @@ fn main() -> Result<()> {
 }
 
 /*
-Note:
-storageに書き込まれているedgesは、確保されている要素数に満たない場合があり、それはどうdeserializeされるのか。
 
 pruneには、個数を制限するロジックはついていない？
 
 todo: external sortのメモリサイズの指定を
+
+cacheは、RefCellを使っているので、thread local出ないといけない
 
 */

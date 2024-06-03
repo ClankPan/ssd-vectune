@@ -1,22 +1,22 @@
 use vectune::GraphInterface;
 
 use crate::point::Point;
+use crate::storage::StorageTrait;
 use crate::GraphStore;
-use crate::Storage;
 
-pub struct Graph {
+pub struct Graph<S: StorageTrait> {
     size_l: usize,
     size_r: usize,
     size_a: f32,
 
-    graph_store: GraphStore<Storage>,
+    graph_store: GraphStore<S>,
     node_index_to_store_index: Vec<u32>,
     start_node_index: u32,
 }
 
-impl Graph {
+impl<S: StorageTrait> Graph<S> {
     pub fn new(
-        graph_store: GraphStore<Storage>,
+        graph_store: GraphStore<S>,
         node_index_to_store_index: Vec<u32>,
         start_node_index: u32,
     ) -> Self {
@@ -36,7 +36,7 @@ impl Graph {
     }
 }
 
-impl GraphInterface<Point> for Graph {
+impl<S: StorageTrait> GraphInterface<Point> for Graph<S> {
     fn alloc(&mut self, _point: Point) -> u32 {
         todo!()
     }
