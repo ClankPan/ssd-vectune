@@ -47,7 +47,8 @@ where
                 .0;
             // Write data to cache
             let mut buffer = vec![0; self.sector_byte_size];
-            self.storage.read(sector_index * self.sector_byte_size, &mut buffer);
+            self.storage
+                .read(sector_index * self.sector_byte_size, &mut buffer);
             // Update cache table
             cache_table[sector_index].0 = cache_index;
             cache[cache_index] = buffer;

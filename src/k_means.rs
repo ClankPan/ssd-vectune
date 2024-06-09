@@ -35,7 +35,7 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
         .collect();
     // 4. 全ての点に対して、first, secondのclusterを決めて、firstのPointSumに加算。Vec<(FirstLabal, SecondLabel)>
     let mut cluster_labels = vec![(0, 0); vector_reader.get_num_vectors()];
-    let dist_threshold = 0.001;
+    let dist_threshold = 0.01;
     let max_iter_count = 100;
     let mut iter_count = 0;
 

@@ -20,6 +20,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
 ) {
     let mut node_written_ssd_bitmap = BitSet::new();
 
+    let mut check_node_written: Vec<u8> = vec![0; cluster_labels.len()];
+
     for cluster_label in 0..*num_clusters {
         println!("shard: {}", cluster_label);
         // 1. a cluster labelを持つpointをlist upして、vectune::indexに渡す。
@@ -33,12 +35,15 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
         let (indexed_shard, start_shard_id): (Vec<(Point, Vec<u32>)>, u32) =
             vectune::Builder::default()
                 .set_seed(seed)
+                // .set_r(20) // wip
                 .progress(ProgressBar::new(1000))
                 .build(shard_points);
         let _start_node_id = table_for_shard_id_to_node_id[start_shard_id as usize];
 
         // 3. idをもとにssdに書き込む。
         // 4. bitmapを持っておいて、idがtrueの時には、すでにあるedgesをdeserializeして、extend, dup。
+        /* Merging */
+
         indexed_shard.into_par_iter().enumerate().for_each(
             |(shard_id, (point, shard_id_edges))| {
                 let node_id = table_for_shard_id_to_node_id[shard_id];
@@ -49,22 +54,37 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
                     })
                     .collect();
 
-                if node_written_ssd_bitmap.contains(node_id) {
+                let original_len = edges.len();
+
+                if check_node_written[node_id] >= 1 {
                     // 元のedgesだけ復号して、追加する
                     edges.extend(graph_on_storage.read_edges(&node_id).unwrap());
                     edges.sort();
                     edges.dedup();
+
+                    // println!("already exsits, node: {}", node_id);
+                }
+
+                if edges.len() > 140 {
+                    println!("edge is over {}. node_id: {}, len: {}, original_len: {}", 140, node_id, edges.len(), original_len);
                 }
 
                 graph_on_storage
                     .write_node(&node_id, &point.to_f32_vec(), &edges)
                     .unwrap();
+
             },
         );
+
         table_for_shard_id_to_node_id.iter().for_each(|node_id| {
-            node_written_ssd_bitmap.insert(*node_id);
+            check_node_written[*node_id] += 1
         });
+
+        println!("check_node_written is :{}", check_node_written.iter().all(|count| *count < 3));
+
     }
+
+    println!("check_node_written is :{}", check_node_written.into_iter().all(|count| count == 2))
 }
 
 fn pickup_target_nodes(
@@ -75,7 +95,7 @@ fn pickup_target_nodes(
         .iter()
         .enumerate()
         .filter(|(_, (first, second))| first == cluster_label || second == cluster_label)
-        .map(|(id, _)| id)
+        .map(|(node_index, _)| node_index)
         .collect()
 }
 
