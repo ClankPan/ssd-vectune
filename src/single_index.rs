@@ -17,7 +17,7 @@ pub fn single_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
         .map(|node_id| Point::from_f32_vec(vector_reader.read(&node_id).unwrap()))
         .collect();
     // 2. vectune::indexに渡すノードのindexとidとのtableを作る
-    let (indexed_shard, _start_shard_id): (Vec<(Point, Vec<u32>)>, u32) =
+    let (indexed_shard, _start_shard_id, _): (Vec<(Point, Vec<u32>)>, u32, Vec<Vec<u32>>) =
         vectune::Builder::default()
             .set_seed(seed)
             .set_a(3.0)

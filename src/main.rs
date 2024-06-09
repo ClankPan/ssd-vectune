@@ -7,6 +7,7 @@ pub mod cache;
 pub mod graph;
 pub mod graph_store;
 pub mod k_means;
+pub mod merge_gorder;
 pub mod original_vector_reader;
 pub mod point;
 pub mod sharded_index;
@@ -110,8 +111,14 @@ fn main() -> Result<()> {
                         .to_string(),
                     directory.join("graph.json").display().to_string(),
                     directory.join("cluster_points.json").display().to_string(),
-                    directory.join("query.public.10K.fbin").display().to_string(),
-                    directory.join("groundtruth.public.10K.ibin").display().to_string(),
+                    directory
+                        .join("query.public.10K.fbin")
+                        .display()
+                        .to_string(),
+                    directory
+                        .join("groundtruth.public.10K.ibin")
+                        .display()
+                        .to_string(),
                     directory.join("backlinks.json").display().to_string(),
                 )
             } else {
@@ -163,6 +170,7 @@ fn main() -> Result<()> {
                     &mut graph_on_stroage,
                     &num_clusters,
                     &cluster_labels,
+                    &num_node_in_sector,
                     seed,
                 );
 
@@ -205,7 +213,7 @@ fn main() -> Result<()> {
                 println!("sort edges");
                 let sorted = sorter.sort_by(edge_iter, |a, b| a.0.cmp(&b.0)).unwrap();
                 println!("make backlinks");
-    
+
                 let backlinks: Vec<Vec<u32>> = sorted
                     .into_iter()
                     .map(Result::unwrap)
@@ -216,7 +224,6 @@ fn main() -> Result<()> {
                         group.map(|(_, edge)| edge).collect()
                     })
                     .collect();
-
 
                 let json_string = serde_json::to_string(&backlinks)?;
                 let mut file = File::create(backlinks_path)?;
@@ -233,9 +240,7 @@ fn main() -> Result<()> {
                 backlinks
             };
 
-
             println!("backlinks.len(): {}", backlinks.len());
-
 
             println!("get_backlinks clousre");
             let get_backlinks = |id: &u32| -> Vec<u32> { backlinks[*id as usize].clone() };
@@ -283,8 +288,8 @@ fn main() -> Result<()> {
             WIP: 注意
 
             sector_packingは、最後の一個を別でやらないと、個数が足らないsectorが、途中に挟まってしまう。
-            
-            
+
+
             */
 
             println!("reordered_node_ids");
@@ -377,8 +382,6 @@ fn main() -> Result<()> {
             /* test recall-rate */
 
             let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
-            
-
 
             let random_vector = Point::from_f32_vec(
                 (0..vector_reader.get_vector_dim())
