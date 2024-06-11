@@ -16,7 +16,7 @@ pub type ClusterLabel = u8;
 pub type DistAndNode = (f32, VectorIndex);
 pub type ClosedVectorIndex = VectorIndex;
 
-pub fn on_disk_k_means<R: OriginalVectorReaderTrait + std::marker::Sync>(
+pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
     num_clusters: &ClusterLabel,
     rng: &mut SmallRng,
@@ -196,7 +196,7 @@ mod tests {
             }
         }
     }
-    impl OriginalVectorReaderTrait for TestVectorReader {
+    impl OriginalVectorReaderTrait<f32> for TestVectorReader {
         fn read(&self, index: &VectorIndex) -> Result<Vec<f32>> {
             let vector = &self.vectors[*index];
             Ok(vector.clone())

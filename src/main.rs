@@ -18,16 +18,18 @@ pub mod utils;
 use std::{
     fs::File,
     io::{BufReader, Write},
-    path::{self, Path, PathBuf},
+    path::Path,
+    sync::atomic::{self, AtomicUsize},
 };
 
 use anyhow::Result;
-use bit_vec::BitVec;
-use bytesize::{GB, KB};
-use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
+// use bit_vec::BitVec;
+use bytesize::KB;
+// use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
 use graph::Graph;
+use indicatif::ProgressBar;
 use itertools::Itertools;
-use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use k_means::on_disk_k_means;
 // use node_reader::{EdgesIterator, GraphOnStorage, GraphOnStorageTrait};
@@ -37,11 +39,7 @@ use sharded_index::sharded_index;
 // use single_index::single_index;
 use vectune::PointInterface;
 
-use crate::{
-    graph_store::{EdgesIterator, GraphStore},
-    point::Point,
-    storage::Storage,
-};
+use crate::{graph_store::GraphStore, point::Point, storage::Storage};
 
 type VectorIndex = usize;
 
@@ -84,7 +82,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Build {
             skip_merge_index,
-            skip_make_backlinks,
+            skip_make_backlinks, // wip
             original_vector_path,
             max_sector_k_byte_size,
         } => {
@@ -98,7 +96,7 @@ fn main() -> Result<()> {
                 cluster_points_path,
                 query_vector_path,
                 groundtruth_path,
-                backlinks_path,
+                _backlinks_path,
             ) = if let Some(directory) = Path::new(&original_vector_path).parent() {
                 (
                     directory
@@ -128,7 +126,10 @@ fn main() -> Result<()> {
             /* read original vectors */
             println!("reading vector file");
             // 10Mだと大きすぎるので、小さなデータセットをここから作る。
+            #[cfg(not(feature = "1m"))]
             let vector_reader = OriginalVectorReader::new(&original_vector_path)?;
+            #[cfg(feature = "1m")]
+            let vector_reader = OriginalVectorReader::new_with_1m(&original_vector_path)?;
 
             /* sharding */
             println!("initializing graph");
@@ -162,10 +163,10 @@ fn main() -> Result<()> {
 
             println!("k-menas on disk and sharded indexing");
             let num_clusters: u8 = 16;
-            let cluster_points = if !skip_merge_index {
+            let (cluster_points, reordered_node_ids) = if !skip_merge_index {
                 let (cluster_labels, cluster_points) =
                     on_disk_k_means(&vector_reader, &num_clusters, &mut rng);
-                sharded_index(
+                let reordered_node_ids = sharded_index(
                     &vector_reader,
                     &mut graph_on_stroage,
                     &num_clusters,
@@ -174,96 +175,26 @@ fn main() -> Result<()> {
                     seed,
                 );
 
-                let json_string = serde_json::to_string(&cluster_points)?;
+                let result = (cluster_points, reordered_node_ids);
+
+                let json_string = serde_json::to_string(&result)?;
                 let mut file = File::create(cluster_points_path)?;
                 file.write_all(json_string.as_bytes())?;
 
-                cluster_points
+                result
             } else {
                 println!("skiped");
                 let file = File::open(cluster_points_path)?;
                 let reader = BufReader::new(file);
 
                 // JSONをデシリアライズ
-                let cluster_points = serde_json::from_reader(reader)?;
-                cluster_points
+                let cluster_points_and_reordered_ids = serde_json::from_reader(reader)?;
+                cluster_points_and_reordered_ids
             };
-
-            /* gordering */
-            // 2. 並び替えの順番をもとに、ssdに書き込む。
-
-            // debug
-            println!("vector len {}", vector_reader.get_num_vectors());
-
-            // WIP: buffer size
-            let sort_buffer_size = 5 * GB as usize;
-
-            println!("gordering");
-            println!("make backlinks");
-            let backlinks = if !skip_make_backlinks {
-                let edge_iter = EdgesIterator::new(&graph_on_stroage);
-
-                println!("make sorter");
-                let sorter: ExternalSorter<(u32, u32), std::io::Error, LimitedBufferBuilder> =
-                    ExternalSorterBuilder::new()
-                        .with_tmp_dir(path::Path::new("./"))
-                        .with_buffer(LimitedBufferBuilder::new(sort_buffer_size, false))
-                        .build()
-                        .unwrap();
-                println!("sort edges");
-                let sorted = sorter.sort_by(edge_iter, |a, b| a.0.cmp(&b.0)).unwrap();
-                println!("make backlinks");
-
-                let backlinks: Vec<Vec<u32>> = sorted
-                    .into_iter()
-                    .map(Result::unwrap)
-                    .chunk_by(|&(key, _)| key)
-                    .into_iter()
-                    .map(|(_key, group)| {
-                        // println!("{}", _key);
-                        group.map(|(_, edge)| edge).collect()
-                    })
-                    .collect();
-
-                let json_string = serde_json::to_string(&backlinks)?;
-                let mut file = File::create(backlinks_path)?;
-                file.write_all(json_string.as_bytes())?;
-
-                backlinks
-            } else {
-                println!("skiped");
-                let file = File::open(backlinks_path)?;
-                let reader = BufReader::new(file);
-
-                // JSONをデシリアライズ
-                let backlinks: Vec<Vec<u32>> = serde_json::from_reader(reader)?;
-                backlinks
-            };
-
-            println!("backlinks.len(): {}", backlinks.len());
-
-            println!("get_backlinks clousre");
-            let get_backlinks = |id: &u32| -> Vec<u32> { backlinks[*id as usize].clone() };
-
-            println!("get_edges clousre");
-            let get_edges =
-                |id: &u32| -> Vec<u32> { graph_on_stroage.read_edges(&(*id as usize)).unwrap() };
-
-            println!("target_node_bit_vec");
-            let target_node_bit_vec = BitVec::from_elem(vector_reader.get_num_vectors(), true);
-            let window_size = num_node_in_sector;
-            println!("do vectune::gorder");
-            let reordered_node_ids = vectune::gorder(
-                get_edges,
-                get_backlinks,
-                target_node_bit_vec,
-                window_size,
-                &mut rng,
-            );
 
             /* diskへの書き込み */
             println!("writing disk");
-            let storage = if true {
+            let storage = if !skip_make_backlinks {
                 println!("Storage::new_with_empty_file");
                 Storage::new_with_empty_file(
                     &ordered_graph_storage_path,
@@ -284,15 +215,12 @@ fn main() -> Result<()> {
                 storage,
             );
 
-            /*
-            WIP: 注意
-
-            sector_packingは、最後の一個を別でやらないと、個数が足らないsectorが、途中に挟まってしまう。
-
-
-            */
-
             println!("reordered_node_ids");
+            println!(
+                "reordered_node_ids_count {}",
+                reordered_node_ids.iter().flatten().count()
+            );
+
             reordered_node_ids
                 .iter()
                 .enumerate()
@@ -311,29 +239,12 @@ fn main() -> Result<()> {
                         .write_serialized_sector(&sector_index, &buffer)
                         .unwrap();
                 });
-            // reordered_node_ids
-            //     .chunks(window_size)
-            //     .enumerate()
-            //     .par_bridge()
-            //     .for_each(|(sector_index, node_ids)| {
-            //         let mut node_offset = 0;
-            //         let mut buffer: Vec<u8> = vec![0; sector_byte_size];
-            //         for node_id in node_ids {
-            //             let serialized_node =
-            //                 graph_on_stroage.read_serialized_node(&(*node_id as usize));
-            //             let node_offset_end = node_offset + node_byte_size;
-            //             buffer[node_offset..node_offset_end].copy_from_slice(&serialized_node);
-            //             node_offset = node_offset_end;
-            //         }
-
-            //         ordered_graph_on_storage
-            //             .write_serialized_sector(&sector_index, &buffer)
-            //             .unwrap();
-            //     });
 
             /* node_index とstore_indexの変換表を作る。 */
+            println!("making node_index_to_store_index");
             let node_index_to_store_index: Vec<u32> = reordered_node_ids
                 .into_iter()
+                .flatten()
                 .enumerate()
                 .map(|(store_index, node_index)| (node_index, store_index))
                 .sorted()
@@ -379,9 +290,7 @@ fn main() -> Result<()> {
 
             graph.set_start_node_index(centroid_node_index);
 
-            /* test recall-rate */
-
-            let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
+            /* test search */
 
             let random_vector = Point::from_f32_vec(
                 (0..vector_reader.get_vector_dim())
@@ -405,6 +314,62 @@ fn main() -> Result<()> {
             let json_string = serde_json::to_string(&data)?;
             let mut file = File::create(graph_json_path)?;
             file.write_all(json_string.as_bytes())?;
+
+            /* recall-rate */
+
+            let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
+            let groundtruth_reader = OriginalVectorReader::new(&groundtruth_path)?;
+
+            let progress = Some(ProgressBar::new(1000));
+            let progress_done = AtomicUsize::new(0);
+            if let Some(bar) = &progress {
+                bar.set_length(query_vector_reader.get_num_vectors() as u64);
+                bar.set_message("Gordering");
+            }
+
+            // let query_iter = query_vector_reader.get_num_vectors();
+            let query_iter = 20;
+
+            let hit = (0..query_iter)
+                .into_iter()
+                .map(|query_index| {
+                    let query_vector: Vec<f32> = query_vector_reader.read(&query_index).unwrap();
+                    let groundtruth_indexies: Vec<u32> =
+                        groundtruth_reader.read(&query_index).unwrap();
+
+                    let groundtruth_vectors: Vec<Vec<f32>> = groundtruth_indexies.iter().map(|i| vector_reader.read(&(*i as usize)).unwrap()).collect();
+                    
+                    
+
+                    let k_ann =
+                        vectune::search(&mut graph, &Point::from_f32_vec(query_vector), 5).0;
+
+                    let result_top_5: Vec<u32> = k_ann.into_iter().map(|(_, i)| i).collect();
+                    let top5_groundtruth = &groundtruth_indexies[0..5];
+                    println!("{:?}\n{:?}\n\n", top5_groundtruth, result_top_5);
+                    let mut hit = 0;
+                    for res in result_top_5 {
+                        if top5_groundtruth.contains(&res) {
+                            hit += 1;
+                        }
+                    }
+                    if let Some(bar) = &progress {
+                        let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                        if value % 1000 == 0 {
+                            bar.set_position(value as u64);
+                        }
+                    }
+
+                    hit
+                })
+                .reduce(|acc, x| acc + x)
+                .unwrap();
+
+            if let Some(bar) = &progress {
+                bar.finish();
+            }
+
+            println!("5-recall-rate@5: {}", hit as f32 / (5 * query_iter) as f32);
         }
 
         Commands::Search => {

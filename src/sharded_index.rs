@@ -1,5 +1,6 @@
 use crate::graph_store::GraphStore;
 use crate::k_means::ClusterLabel;
+use crate::merge_gorder::merge_gorder;
 use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use crate::storage::Storage;
@@ -14,16 +15,18 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 
-pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
+pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
     graph_on_storage: &GraphStore<Storage>,
     num_clusters: &ClusterLabel,
     cluster_labels: &[(ClusterLabel, ClusterLabel)],
     num_node_in_sector: &usize,
     seed: u64,
-) {
+) -> Vec<Vec<u32>> {
     let mut check_node_written: Vec<u8> = vec![0; cluster_labels.len()];
     let mut rng = SmallRng::seed_from_u64(seed);
+
+    println!("num_node_in_sector: {}", num_node_in_sector);
 
     // wip
     //　ノードが属するgroupをtupleで記録する。
@@ -65,12 +68,28 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
         )
         .into_iter()
         .map(|group| {
+            if group.len() != *num_node_in_sector {
+                println!("{}", group.len())
+            }
+
             group
                 .into_iter()
                 .map(|shard_index| table_for_shard_id_to_node_id[shard_index as usize] as u32)
                 .collect()
         })
         .collect();
+
+        // wip
+        println!(
+            "% {}, {}",
+            reordered_node_ids.iter().flatten().count() % 4,
+            indexed_shard.len() % 4
+        );
+        assert_eq!(
+            reordered_node_ids.iter().flatten().count(),
+            indexed_shard.len()
+        );
+
         groups.extend(reordered_node_ids);
 
         // 3. idをもとにssdに書き込む。
@@ -124,6 +143,11 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
         );
     }
 
+    assert_eq!(
+        vector_reader.get_num_vectors() * 2,
+        groups.clone().into_iter().flatten().count()
+    );
+
     let belong_groups: Vec<(u32, u32)> = groups
         .iter()
         .enumerate()
@@ -143,9 +167,21 @@ pub fn sharded_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
         })
         .collect();
 
-    
+    let get_edges = |id: &u32| -> Vec<u32> {
+        let (group_a, group_b) = belong_groups[*id as usize];
+        let mut member: Vec<u32> = Vec::new();
+        member.extend(groups[group_a as usize].clone());
+        member.extend(groups[group_b as usize].clone());
 
+        member
+    };
 
+    let target_node_bit_vec = BitVec::from_elem(belong_groups.len(), true);
+    let window_size = *num_node_in_sector;
+    println!("do vectune::gorder");
+    let reordered_node_ids = merge_gorder(get_edges, target_node_bit_vec, window_size, &mut rng);
+
+    reordered_node_ids
 }
 
 fn pickup_target_nodes(

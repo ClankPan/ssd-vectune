@@ -4,6 +4,7 @@ use crate::point::Point;
 use crate::storage::StorageTrait;
 use crate::GraphStore;
 
+#[derive(Clone)]
 pub struct Graph<S: StorageTrait> {
     size_l: usize,
     size_r: usize,

@@ -6,6 +6,7 @@ use anyhow::Result;
 type StoreIndex = usize;
 type SectorIndex = usize;
 
+#[derive(Clone)]
 pub struct GraphStore<S: StorageTrait> {
     storage: S,
 

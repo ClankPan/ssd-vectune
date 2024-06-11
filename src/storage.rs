@@ -3,7 +3,6 @@ use memmap2::{MmapMut, MmapOptions};
 use std::{fs::OpenOptions, sync::Arc};
 
 /* types */
-
 pub trait StorageTrait {
     fn read(&self, offset: usize, dst: &mut [u8]);
     fn write(&self, offset: usize, src: &[u8]);
@@ -12,6 +11,7 @@ pub trait StorageTrait {
     // todo grow file size
 }
 
+#[derive(Clone)]
 pub struct Storage {
     mmap_arc: Arc<MmapMut>,
     sector_byte_size: usize,
@@ -56,7 +56,7 @@ impl StorageTrait for Storage {
     }
 
     fn write(&self, offset: usize, src: &[u8]) {
-        assert!(offset + src.len() < self.mmap_arc.len());
+        assert!(offset + src.len() <= self.mmap_arc.len());
 
         let mmap_ref = Arc::clone(&self.mmap_arc);
         unsafe {

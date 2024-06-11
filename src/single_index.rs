@@ -7,7 +7,7 @@ use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
-pub fn single_index<R: OriginalVectorReaderTrait + std::marker::Sync>(
+pub fn single_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
     graph_on_storage: &GraphStore<Storage>,
     seed: u64,
