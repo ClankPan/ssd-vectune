@@ -601,6 +601,7 @@ dependencies = [
  "bit-set",
  "bit-vec",
  "bytemuck",
+ "byteorder",
  "bytesize",
  "clap",
  "ext-sort",

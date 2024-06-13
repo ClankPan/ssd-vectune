@@ -63,12 +63,18 @@ enum Commands {
         #[arg(long)]
         skip_make_backlinks: bool,
 
+        #[arg(long)]
+        skip_test_recall_rate: bool,
+
         original_vector_path: String,
 
         max_sector_k_byte_size: usize,
+
+        dataset_size: usize,
     },
     /// Executes the search process
     Search,
+    Gt,
 }
 
 fn main() -> Result<()> {
@@ -83,8 +89,10 @@ fn main() -> Result<()> {
         Commands::Build {
             skip_merge_index,
             skip_make_backlinks, // wip
+            skip_test_recall_rate,
             original_vector_path,
             max_sector_k_byte_size,
+            dataset_size,
         } => {
             let max_sector_byte_size = max_sector_k_byte_size * KB as usize;
 
@@ -95,7 +103,7 @@ fn main() -> Result<()> {
                 graph_json_path,
                 cluster_points_path,
                 query_vector_path,
-                groundtruth_path,
+                _groundtruth_path,
                 _backlinks_path,
             ) = if let Some(directory) = Path::new(&original_vector_path).parent() {
                 (
@@ -126,10 +134,12 @@ fn main() -> Result<()> {
             /* read original vectors */
             println!("reading vector file");
             // 10Mだと大きすぎるので、小さなデータセットをここから作る。
-            #[cfg(not(feature = "1m"))]
-            let vector_reader = OriginalVectorReader::new(&original_vector_path)?;
-            #[cfg(feature = "1m")]
-            let vector_reader = OriginalVectorReader::new_with_1m(&original_vector_path)?;
+            // #[cfg(not(feature = "size"))]
+            // let vector_reader = OriginalVectorReader::new(&original_vector_path)?;
+            let vector_reader = {
+                println!("dataset_size: {} million", dataset_size);
+                OriginalVectorReader::new_with(&original_vector_path, dataset_size)?
+            };
 
             /* sharding */
             println!("initializing graph");
@@ -290,90 +300,147 @@ fn main() -> Result<()> {
 
             graph.set_start_node_index(centroid_node_index);
 
-            /* test search */
-
-            let random_vector = Point::from_f32_vec(
-                (0..vector_reader.get_vector_dim())
-                    .map(|_| rng.gen::<f32>())
-                    .collect(),
-            );
-            let (dist, index) = (0..vector_reader.get_num_vectors())
-                .into_par_iter()
-                .map(|index| {
-                    let (vector, _) = graph_on_stroage.read_node(&index).unwrap();
-                    (random_vector.distance(&Point::from_f32_vec(vector)), index)
-                })
-                .reduce_with(|acc, x| if acc.0 < x.0 { acc } else { x })
-                .unwrap();
-            println!("random_vector truth: {} {}", index, dist);
-
-            let k_ann = vectune::search(&mut graph, &random_vector, 10).0;
-            println!("results: {:?}", k_ann);
-
             let data = (node_index_to_store_index, centroid_node_index);
             let json_string = serde_json::to_string(&data)?;
             let mut file = File::create(graph_json_path)?;
             file.write_all(json_string.as_bytes())?;
 
-            /* recall-rate */
+            /* test search */
 
-            let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
-            let groundtruth_reader = OriginalVectorReader::new(&groundtruth_path)?;
+            if !skip_test_recall_rate {
+                let random_vector = Point::from_f32_vec(
+                    (0..vector_reader.get_vector_dim())
+                        .map(|_| rng.gen::<f32>())
+                        .collect(),
+                );
+                let (dist, index) = (0..vector_reader.get_num_vectors())
+                    .into_par_iter()
+                    .map(|index| {
+                        let (vector, _) = graph_on_stroage.read_node(&index).unwrap();
+                        (random_vector.distance(&Point::from_f32_vec(vector)), index)
+                    })
+                    .reduce_with(|acc, x| if acc.0 < x.0 { acc } else { x })
+                    .unwrap();
+                println!("random_vector truth: {} {}", index, dist);
+
+                let k_ann = vectune::search(&mut graph, &random_vector, 10).0;
+                println!("results: {:?}", k_ann);
+
+                /* recall-rate */
+
+                let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
+                let groundtruth: Vec<Vec<u32>> =
+                    read_ivecs("test_vectors/gt/deep10M_groundtruth.ivecs").unwrap();
+
+                let progress = Some(ProgressBar::new(1000));
+                let progress_done = AtomicUsize::new(0);
+                if let Some(bar) = &progress {
+                    bar.set_length(query_vector_reader.get_num_vectors() as u64);
+                    bar.set_message("Gordering");
+                }
+
+                // let query_iter = query_vector_reader.get_num_vectors();
+                let query_iter = 20;
+
+                let hit = (0..query_iter)
+                    .into_iter()
+                    .map(|query_index| {
+                        let query_vector: Vec<f32> =
+                            query_vector_reader.read(&query_index).unwrap();
+                        // let groundtruth_indexies: Vec<u32> =
+                        //     groundtruth_reader.read(&query_index).unwrap();
+
+                        // let groundtruth_vectors: Vec<Vec<f32>> = ivecs_groundtruth[query_index].iter().map(|i| vector_reader.read(&(*i as usize)).unwrap()).collect();
+
+                        let k_ann =
+                            vectune::search(&mut graph, &Point::from_f32_vec(query_vector), 5).0;
+
+                        let result_top_5: Vec<u32> = k_ann.into_iter().map(|(_, i)| i).collect();
+                        let top5_groundtruth = &groundtruth[query_index][0..5];
+                        println!("{:?}\n{:?}\n\n", top5_groundtruth, result_top_5);
+                        let mut hit = 0;
+                        for res in result_top_5 {
+                            if top5_groundtruth.contains(&res) {
+                                hit += 1;
+                            }
+                        }
+                        if let Some(bar) = &progress {
+                            let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                            if value % 1000 == 0 {
+                                bar.set_position(value as u64);
+                            }
+                        }
+
+                        hit
+                    })
+                    .reduce(|acc, x| acc + x)
+                    .unwrap();
+
+                if let Some(bar) = &progress {
+                    bar.finish();
+                }
+
+                println!("5-recall-rate@5: {}", hit as f32 / (5 * query_iter) as f32);
+            }
+        }
+
+        Commands::Search => {
+            search();
+        }
+        Commands::Gt => {
+            let query_reader: Vec<Vec<f32>> =
+                read_ibin("test_vectors/query.public.10K.fbin").unwrap();
+            let vector_reader: Vec<Vec<f32>> = read_ibin("test_vectors/base.10M.fbin").unwrap();
+
+            // let groundtruth: Vec<Vec<u32>> = query_reader.into_iter().map(|query| {
+            //     let query = Point::from_f32_vec(query);
+            //     let mut dists: Vec<(f32, u32)> = vector_reader.iter().enumerate().map(|(i, vector)| (query.distance(&Point::from_f32_vec(vector.to_vec())), i as u32)).collect();
+            //     dists.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less));
+            //     dists[0..100].into_iter().map(|(_, i)| *i).collect()
+            // }).collect();
 
             let progress = Some(ProgressBar::new(1000));
             let progress_done = AtomicUsize::new(0);
             if let Some(bar) = &progress {
-                bar.set_length(query_vector_reader.get_num_vectors() as u64);
+                bar.set_length((query_reader.len() * vector_reader.len()) as u64);
                 bar.set_message("Gordering");
             }
 
-            // let query_iter = query_vector_reader.get_num_vectors();
-            let query_iter = 20;
+            let groundtruth: Vec<Vec<u32>> = query_reader
+                .into_par_iter()
+                .map(|query| {
+                    let query = Point::from_f32_vec(query);
+                    let mut dists: Vec<(f32, u32)> = vector_reader
+                        .iter()
+                        .enumerate()
+                        .map(|(i, vector)| {
+                            if let Some(bar) = &progress {
+                                let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                                if value % 1000 == 0 {
+                                    bar.set_position(value as u64);
+                                }
+                            }
+                            (
+                                query.distance(&Point::from_f32_vec(vector.to_vec())),
+                                i as u32,
+                            )
+                        })
+                        .collect();
+                    // Use partial_cmp for sorting f32 values
+                    dists
+                        .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-            let hit = (0..query_iter)
-                .into_iter()
-                .map(|query_index| {
-                    let query_vector: Vec<f32> = query_vector_reader.read(&query_index).unwrap();
-                    let groundtruth_indexies: Vec<u32> =
-                        groundtruth_reader.read(&query_index).unwrap();
-
-                    let groundtruth_vectors: Vec<Vec<f32>> = groundtruth_indexies.iter().map(|i| vector_reader.read(&(*i as usize)).unwrap()).collect();
-                    
-                    
-
-                    let k_ann =
-                        vectune::search(&mut graph, &Point::from_f32_vec(query_vector), 5).0;
-
-                    let result_top_5: Vec<u32> = k_ann.into_iter().map(|(_, i)| i).collect();
-                    let top5_groundtruth = &groundtruth_indexies[0..5];
-                    println!("{:?}\n{:?}\n\n", top5_groundtruth, result_top_5);
-                    let mut hit = 0;
-                    for res in result_top_5 {
-                        if top5_groundtruth.contains(&res) {
-                            hit += 1;
-                        }
-                    }
-                    if let Some(bar) = &progress {
-                        let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
-                        if value % 1000 == 0 {
-                            bar.set_position(value as u64);
-                        }
-                    }
-
-                    hit
+                    dists.iter().take(100).map(|&(_, i)| i).collect()
                 })
-                .reduce(|acc, x| acc + x)
-                .unwrap();
+                .collect();
 
             if let Some(bar) = &progress {
                 bar.finish();
             }
 
-            println!("5-recall-rate@5: {}", hit as f32 / (5 * query_iter) as f32);
-        }
-
-        Commands::Search => {
-            search();
+            let json_string = serde_json::to_string(&groundtruth)?;
+            let mut file = File::create("test_vectors/groundtruth_of_10M.json")?;
+            file.write_all(json_string.as_bytes())?;
         }
     }
 
@@ -382,6 +449,50 @@ fn main() -> Result<()> {
 
 fn search() {
     println!("Running search...");
+}
+
+use byteorder::{LittleEndian, ReadBytesExt};
+
+fn read_ivecs(file_path: &str) -> std::io::Result<Vec<Vec<u32>>> {
+    let file = File::open(file_path)?;
+    let mut reader = BufReader::new(file);
+    let mut vectors = Vec::new();
+
+    while let Ok(dim) = reader.read_i32::<LittleEndian>() {
+        let mut vec = Vec::with_capacity(dim as usize);
+        for _ in 0..dim {
+            let val = reader.read_i32::<LittleEndian>()?;
+            vec.push(val);
+        }
+        vectors.push(vec);
+    }
+
+    Ok(vectors
+        .into_iter()
+        .map(|gt| gt.into_iter().map(|g| g as u32).collect())
+        .collect())
+}
+
+fn read_ibin(file_path: &str) -> Result<Vec<Vec<f32>>> {
+    let data = std::fs::read(file_path)?;
+
+    let num_vectors = u32::from_le_bytes(data[0..4].try_into()?) as usize;
+    let vector_dim = u32::from_le_bytes(data[4..8].try_into()?) as usize;
+    let start_offset = 8;
+    let vector_byte_size = vector_dim * 4;
+
+    let vectors: Vec<Vec<f32>> = (0..num_vectors)
+        .into_iter()
+        .map(|i| {
+            let offset = start_offset + vector_byte_size * i;
+
+            let vector: &[f32] =
+                bytemuck::try_cast_slice(&data[offset..offset + vector_byte_size]).unwrap();
+            vector.to_vec()
+        })
+        .collect();
+
+    Ok(vectors)
 }
 
 /*
