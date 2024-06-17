@@ -13,6 +13,7 @@ where
     T: bytemuck::Pod,
 {
     fn read(&self, index: &VectorIndex) -> Result<Vec<T>>;
+    fn read_with_range(&self, start: &VectorIndex, end: &VectorIndex) -> Result<Vec<Vec<T>>>;
     fn get_num_vectors(&self) -> usize;
     fn get_vector_dim(&self) -> usize;
 }
@@ -71,6 +72,21 @@ impl<T: bytemuck::Pod> OriginalVectorReaderTrait<T> for OriginalVectorReader<T> 
             .map_err(|e| anyhow!("PodCastError: {:?}", e))?
             .to_vec();
         Ok(vector)
+    }
+
+    fn read_with_range(&self, start: &VectorIndex, end: &VectorIndex) -> Result<Vec<Vec<T>>> {
+        let start = self.start_offset + start * self.vector_dim * 4;
+        let end = self.start_offset + end * self.vector_dim * 4;
+        let bytes = &self.mmap[start..end];
+        let vectors: Vec<T> = bytemuck::try_cast_slice(bytes)
+            .map_err(|e| anyhow!("PodCastError: {:?}", e))?
+            .to_vec();
+        let vectors = vectors
+            .chunks(self.vector_dim)
+            .into_iter()
+            .map(|chunk| chunk.to_vec())
+            .collect();
+        Ok(vectors)
     }
 
     fn get_num_vectors(&self) -> usize {
