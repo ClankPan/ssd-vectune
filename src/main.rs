@@ -55,6 +55,9 @@ enum Commands {
     Build {
         /// Skip the merge-index step
         #[arg(long)]
+        skip_k_means: bool,
+
+        #[arg(long)]
         skip_merge_index: bool,
 
         #[arg(long)]
@@ -86,6 +89,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Build {
+            skip_k_means,
             skip_merge_index,
             skip_make_backlinks, // wip
             skip_test_recall_rate,
@@ -101,7 +105,8 @@ fn main() -> Result<()> {
                 unordered_graph_storage_path,
                 ordered_graph_storage_path,
                 graph_json_path,
-                cluster_points_path,
+                cluster_labels_and_point_path,
+                reordered_node_ids_path,
                 query_vector_path,
                 _groundtruth_path,
                 _backlinks_path,
@@ -116,7 +121,8 @@ fn main() -> Result<()> {
                         .display()
                         .to_string(),
                     directory.join("graph.json").display().to_string(),
-                    directory.join("cluster_points.json").display().to_string(),
+                    directory.join("cluster_labels_and_point.json").display().to_string(),
+                    directory.join("reordered_node_ids.json").display().to_string(),
                     directory
                         .join("query.public.10K.fbin")
                         .display()
@@ -171,11 +177,29 @@ fn main() -> Result<()> {
             );
             // println!("edges: {:?}", graph_on_stroage.read_node(&132));
 
-            println!("k-menas on disk and sharded indexing");
+            println!("k-menas on disk");
             let num_clusters: u8 = 16;
-            let (cluster_points, reordered_node_ids) = if !skip_merge_index {
+            let (cluster_labels, cluster_points) = if !skip_k_means {
                 let (cluster_labels, cluster_points) =
                     on_disk_k_means(&mut vector_reader, &num_clusters, max_chunk_giga_byte_size, &mut rng);
+
+                let json_string = serde_json::to_string(&(cluster_labels.clone(), cluster_points.clone()))?;
+                let mut file = File::create(cluster_labels_and_point_path)?;
+                file.write_all(json_string.as_bytes())?;
+
+                (cluster_labels, cluster_points)
+            } else {
+                println!("skiped");
+                let file = File::open(cluster_labels_and_point_path)?;
+                let reader = BufReader::new(file);
+
+                // JSONをデシリアライズ
+                let reordered_ids = serde_json::from_reader(reader)?;
+                reordered_ids
+            };
+
+            println!("sharded indexing");
+            let reordered_node_ids = if !skip_merge_index {
                 let reordered_node_ids = sharded_index(
                     &vector_reader,
                     &mut graph_on_stroage,
@@ -185,21 +209,19 @@ fn main() -> Result<()> {
                     seed,
                 );
 
-                let result = (cluster_points, reordered_node_ids);
-
-                let json_string = serde_json::to_string(&result)?;
-                let mut file = File::create(cluster_points_path)?;
+                let json_string = serde_json::to_string(&reordered_node_ids)?;
+                let mut file = File::create(reordered_node_ids_path)?;
                 file.write_all(json_string.as_bytes())?;
 
-                result
+                reordered_node_ids
             } else {
                 println!("skiped");
-                let file = File::open(cluster_points_path)?;
+                let file = File::open(reordered_node_ids_path)?;
                 let reader = BufReader::new(file);
 
                 // JSONをデシリアライズ
-                let cluster_points_and_reordered_ids = serde_json::from_reader(reader)?;
-                cluster_points_and_reordered_ids
+                let reordered_ids = serde_json::from_reader(reader)?;
+                reordered_ids
             };
 
             /* diskへの書き込み */
