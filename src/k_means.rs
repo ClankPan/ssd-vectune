@@ -3,6 +3,7 @@ use crate::point::Point;
 use bytesize::GB;
 use indicatif::ProgressBar;
 use rand::rngs::SmallRng;
+use rand::thread_rng;
 use rand::Rng;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
@@ -12,7 +13,6 @@ use rayon::iter::ParallelIterator;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
 use std::vec;
-use rand::seq::SliceRandom;
 use vectune::PointInterface;
 
 pub type VectorIndex = usize;
@@ -24,11 +24,11 @@ pub type DistAndNode = (f32, VectorIndex);
 pub type ClosedVectorIndex = VectorIndex;
 
 
-struct NodeLable {
-    index: VectorIndex,
-    first: ClusterLabel,
-    second: ClusterLabel
-}
+// struct NodeLable {
+//     index: VectorIndex,
+//     first: ClusterLabel,
+//     second: ClusterLabel
+// }
 
 pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &mut R,
@@ -253,8 +253,6 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         iter_count += 1;
         let new_cluster_points = (0..vector_reader.get_num_vectors())
             .step_by(num_vectos_in_chunk)
-            // .collect::<Vec<usize>>()
-            // .into_par_iter()
             .map(|start| {
                 let end = std::cmp::min(
                     start + num_vectos_in_chunk - 1,
@@ -270,7 +268,7 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                         let vector = chunk_vectors[chunk_index].clone();
                         let target_point = Point::from_f32_vec(vector);
                         let dists: Vec<(u8, f32)> = cluster_points
-                            .iter()
+                            .par_iter()
                             .enumerate()
                             .map(|(cluster_label, (cluster_point, _))| {
                                 (cluster_label as u8, cluster_point.distance(&target_point))
@@ -308,13 +306,14 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             // .reduce_with(add_cluster_sums)
             .reduce(add_cluster_sums)
             .unwrap()
-            .into_iter() // ToDo: parallel
+            .into_par_iter() // ToDo: parallel
             .map(|cluster_sums| {
+                let mut rng = thread_rng(); // wip no seedable
                 match cluster_sums {
                     Some(cluster_sums) => {
                         let (p, n, (_, closed_index)) = cluster_sums;
                         let ave: Vec<f32> =
-                            p.to_f32_vec().into_iter().map(|x| x / n as f32).collect();
+                            p.to_f32_vec().into_par_iter().map(|x| x / n as f32).collect();
                         // closed_indexは、実際にはPoint::from_f32_vec(ave)に近いvectorのindexとなるわけではないが、
                         // 終了条件としてクラスターの差が閾値以下になることを前提としているので、closed_indexを利用する。
                         (Point::from_f32_vec(ave), closed_index)
@@ -334,7 +333,7 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
         // 5. PointSumをNumInClusterで割って、次のClusterPointを求める。　それらの差が閾値以下になった時に終了する。
         let cluster_dists: Vec<f32> = old_cluster_points
-            .into_iter()
+            .into_par_iter()
             .zip(&cluster_points)
             .map(|((a, _), (b, _))| a.distance(b))
             .collect();
@@ -351,8 +350,8 @@ fn add_cluster_sums(
     acc: Vec<Option<(PointSum, NumInCluster, DistAndNode)>>,
     vec: Vec<Option<(PointSum, NumInCluster, DistAndNode)>>,
 ) -> Vec<Option<(PointSum, NumInCluster, DistAndNode)>> {
-    acc.into_iter()
-        .zip(vec.into_iter())
+    acc.into_par_iter()
+        .zip(vec.into_par_iter())
         .map(|(a, b)| add_each_points(a, b))
         .collect()
 }

@@ -16,12 +16,12 @@ pub mod storage;
 pub mod utils;
 
 use std::{
-    fs::File, io::{BufReader, Write}, path::Path, ptr, sync::atomic::{self, AtomicUsize}
+    fs::File, io::{BufReader, Write}, path::Path, sync::atomic::{self, AtomicUsize}
 };
 
 use anyhow::Result;
 // use bit_vec::BitVec;
-use bytesize::{GB, KB};
+use bytesize::KB;
 // use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
 use graph::Graph;
 use indicatif::ProgressBar;
@@ -228,7 +228,7 @@ fn main() -> Result<()> {
             println!("reordered_node_ids");
             println!(
                 "reordered_node_ids_count {}",
-                reordered_node_ids.iter().flatten().count()
+                reordered_node_ids.par_iter().flatten().count()
             );
 
             reordered_node_ids
@@ -270,7 +270,7 @@ fn main() -> Result<()> {
                         |acc, x| acc.add(x),
                     )
                     .to_f32_vec()
-                    .into_iter()
+                    .into_par_iter()
                     .map(|x| x / cluster_points.len() as f32)
                     .collect(),
             );
@@ -278,7 +278,7 @@ fn main() -> Result<()> {
             // ave_pointの最近傍ノードを探すために、ave_pointが属するクラスターを探す。
             // WIP: sharded_indexの方からそれぞれのシャードのcentoridを持ってくればいい？
             let tmp_start_index = cluster_points
-                .iter()
+                .par_iter()
                 .map(|(p, v)| (ave_point.distance(&p), v))
                 .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less))
                 .unwrap()
@@ -447,42 +447,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-use memmap2::{MmapOptions, Mmap};
-// use std::fs::File;
-use std::time::{Duration, Instant};
-use std::io;
-use std::thread;
-
-fn search() -> io::Result<()>{
-
-    let file_path = "/Volumes/WD_BLACK/index_deep1b/base.1B.fbin";
-    let file = File::open(file_path)?;
-
-    // let mmap = unsafe {
-    //     MmapOptions::new()
-    //         .len(1 << 30) // 1GiBのサイズ指定
-    //         .map(&file)?
-    // };
-    let mmap = unsafe { Mmap::map(&file)? };
-
-    // mmapがすぐに解放されないように、アクセスする（例として最初のバイトを読む）
-    let mut buff = vec![0u8; 5 * GB as usize];
-
-
-    // 時間計測開始
-    let start_time = Instant::now();
-    unsafe {
-        ptr::copy_nonoverlapping(mmap.as_ptr(), buff.as_mut_ptr(), buff.len());
-    }
-    println!("First byte: {}", buff.len());
-
-    // 時間計測終了
-    let elapsed = start_time.elapsed();
-    println!("Time elapsed in memmap operation: {:.2?}", elapsed);
-
-    thread::sleep(Duration::from_secs(10));
-
-    Ok(())
+fn search() {
 
 }
 

@@ -27,14 +27,13 @@ pub struct OriginalVectorReader<T> {
     num_vectors: usize,
     vector_dim: usize,
     start_offset: usize,
-    file_path: String,
     buf_reader: BufReader<File>,
     phantom: PhantomData<T>,
 }
 impl<T> OriginalVectorReader<T> {
     pub fn new(file_path: &str) -> Result<Self> {
         let file = File::open(file_path)?;
-        let file_path = file_path.to_string();
+        let _file_path = file_path.to_string();
         let mmap = unsafe { Mmap::map(&file)? };
         let num_vectors = u32::from_le_bytes(mmap[0..4].try_into()?) as usize;
         let vector_dim = u32::from_le_bytes(mmap[4..8].try_into()?) as usize;
@@ -48,7 +47,6 @@ impl<T> OriginalVectorReader<T> {
             num_vectors,
             vector_dim,
             start_offset,
-            file_path,
             buf_reader,
             phantom: PhantomData,
         })
@@ -56,7 +54,7 @@ impl<T> OriginalVectorReader<T> {
 
     pub fn new_with(file_path: &str, m: usize) -> Result<Self> {
         let file = File::open(file_path)?;
-        let file_path = file_path.to_string();
+        let _file_path = file_path.to_string();
         let mmap = unsafe { Mmap::map(&file)? };
         let num_vectors = m * 1000000; //  million
         let vector_dim = u32::from_le_bytes(mmap[4..8].try_into()?) as usize;
@@ -70,7 +68,6 @@ impl<T> OriginalVectorReader<T> {
             num_vectors,
             vector_dim,
             start_offset,
-            file_path,
             buf_reader,
             phantom: PhantomData,
         })

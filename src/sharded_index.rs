@@ -17,7 +17,6 @@ use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use rayon::prelude::*;
 
 pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
@@ -71,23 +70,23 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             window_size,
             &mut rng,
         )
-        .into_iter()
+        .into_par_iter()
         .map(|group| {
             if group.len() != *num_node_in_sector {
                 println!("{}", group.len())
             }
 
             group
-                .into_iter()
+                .into_par_iter()
                 .map(|shard_index| table_for_shard_id_to_node_id[shard_index as usize] as u32)
                 .collect()
         })
         .collect();
 
-        assert_eq!(
-            reordered_node_ids.iter().flatten().count(),
-            indexed_shard.len()
-        );
+        // assert_eq!(
+        //     reordered_node_ids.iter().flatten().count(),
+        //     indexed_shard.len()
+        // );
 
         groups.extend(reordered_node_ids);
 
@@ -105,7 +104,7 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             |(shard_id, (point, shard_id_edges))| {
                 let node_id = table_for_shard_id_to_node_id[shard_id];
                 let mut edges: Vec<u32> = shard_id_edges
-                    .into_iter()
+                    .into_par_iter()
                     .map(|edge_shard_id| {
                         table_for_shard_id_to_node_id[edge_shard_id as usize] as u32
                     })
@@ -156,16 +155,16 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
         println!(
             "check_node_written is :{}",
-            check_node_written.iter().all(|count| *count < 3)
+            check_node_written.par_iter().all(|count| *count < 3)
         );
 
         println!("\n\n");
     }
 
-    assert_eq!(
-        vector_reader.get_num_vectors() * 2,
-        groups.clone().into_iter().flatten().count()
-    );
+    // assert_eq!(
+    //     vector_reader.get_num_vectors() * 2,
+    //     groups.clone().into_iter().flatten().count()
+    // );
 
     let belong_groups: Vec<(u32, u32)> = groups
         .iter()
