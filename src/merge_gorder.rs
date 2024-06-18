@@ -1,4 +1,5 @@
 use bit_vec::BitVec;
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
@@ -7,6 +8,8 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rustc_hash::FxHashMap;
 use std::collections::BinaryHeap;
+use std::sync::atomic;
+use std::sync::atomic::AtomicUsize;
 // use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "progress-bar")]
@@ -279,13 +282,10 @@ where
 
     // println!("debug 1");
 
-    #[cfg(feature = "progress-bar")]
     let progress = Some(ProgressBar::new(1000));
-    #[cfg(feature = "progress-bar")]
     let progress_done = AtomicUsize::new(0);
-    #[cfg(feature = "progress-bar")]
     if let Some(bar) = &progress {
-        bar.set_length(packed_nodes.num_sector as u64);
+        bar.set_length(start_ids.len() as u64);
         bar.set_message("Gordering");
     }
 
@@ -296,7 +296,6 @@ where
         .map(|start_node| {
             let res = sector_packing(window_size, &get_edges, &packed_nodes, *start_node);
 
-            #[cfg(feature = "progress-bar")]
             if let Some(bar) = &progress {
                 let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
                 if value % 1000 == 0 {
@@ -310,7 +309,6 @@ where
 
     let last_res = sector_packing(window_size, &get_edges, &packed_nodes, *last_id);
 
-    #[cfg(feature = "progress-bar")]
     if let Some(bar) = &progress {
         let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
         if value % 1000 == 0 {
@@ -322,6 +320,10 @@ where
     // println!("unpacked_count: {}", unpacked_count);
 
     reordered.push(last_res);
+
+    if let Some(bar) = &progress {
+        bar.finish();
+    }
 
     // let are_all_packed = reordered.iter().flatten().all(|id| !packed_nodes.pack_node(id));
     // println!("are_all_packed: {}", are_all_packed);

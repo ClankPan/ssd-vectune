@@ -29,7 +29,7 @@ use bytesize::KB;
 use graph::Graph;
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use k_means::on_disk_k_means;
 // use node_reader::{EdgesIterator, GraphOnStorage, GraphOnStorageTrait};
@@ -71,6 +71,8 @@ enum Commands {
         max_sector_k_byte_size: usize,
 
         dataset_size: usize,
+
+        max_chunk_giga_byte_size: u64,
     },
     /// Executes the search process
     Search,
@@ -93,6 +95,7 @@ fn main() -> Result<()> {
             original_vector_path,
             max_sector_k_byte_size,
             dataset_size,
+            max_chunk_giga_byte_size,
         } => {
             let max_sector_byte_size = max_sector_k_byte_size * KB as usize;
 
@@ -175,7 +178,7 @@ fn main() -> Result<()> {
             let num_clusters: u8 = 16;
             let (cluster_points, reordered_node_ids) = if !skip_merge_index {
                 let (cluster_labels, cluster_points) =
-                    on_disk_k_means(&vector_reader, &num_clusters, &mut rng);
+                    on_disk_k_means(&vector_reader, &num_clusters, max_chunk_giga_byte_size, &mut rng);
                 let reordered_node_ids = sharded_index(
                     &vector_reader,
                     &mut graph_on_stroage,
@@ -232,7 +235,7 @@ fn main() -> Result<()> {
             );
 
             reordered_node_ids
-                .iter()
+                .par_iter()
                 .enumerate()
                 .for_each(|(sector_index, node_ids)| {
                     let mut node_offset = 0;

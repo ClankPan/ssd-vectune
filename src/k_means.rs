@@ -2,7 +2,6 @@ use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use bytesize::GB;
 use indicatif::ProgressBar;
-use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rayon::iter::IndexedParallelIterator;
@@ -34,12 +33,15 @@ struct NodeLable {
 pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
     num_clusters: &ClusterLabel,
+    max_chunk_giga_byte_size: u64,
     rng: &mut SmallRng,
 ) -> (
     Vec<(ClusterLabel, ClusterLabel)>,
     Vec<(ClusterPoint, ClosedVectorIndex)>,
 ) {
     assert!(*num_clusters > 2);
+
+    let max_chunk_byte_size = (max_chunk_giga_byte_size * GB) as usize;
 
     let mut cluster_points: Vec<(ClusterPoint, ClosedVectorIndex)> = (0..*num_clusters)
         .map(|_| {
@@ -50,11 +52,11 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         .collect();
     // 4. 全ての点に対して、first, secondのclusterを決めて、firstのPointSumに加算。Vec<(FirstLabal, SecondLabel)>
     // let mut cluster_labels = vec![(0, 0); vector_reader.get_num_vectors()];
-    let dist_threshold = 0.01;
+    let dist_threshold = 0.001;
     let max_iter_count = 100;
     let mut iter_count = 0;
 
-    let max_chunk_byte_size = 5 * GB as usize;
+    // let max_chunk_byte_size = 20 * GB as usize;
     let num_vectos_in_chunk = max_chunk_byte_size / (vector_reader.get_vector_dim() * 4);
     println!("num_vectos_in_chunk: {}", num_vectos_in_chunk);
 
@@ -75,20 +77,42 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
     let sample_labels = &mut vector_labels[0..num_vectos_in_chunk];
 
-    let sample_vectors: Vec<Vec<f32>> = sample_labels.iter().map(|labels| {
-        vector_reader.read(&labels.index).unwrap()
-    }).collect();
-
-
+    println!("sampling vectors");
     let progress = Some(ProgressBar::new(1000));
     let progress_done = AtomicUsize::new(0);
     if let Some(bar) = &progress {
-        bar.set_length(vector_reader.get_num_vectors() as u64);
-        bar.set_message("on disk k-means");
+        bar.set_length(sample_labels.len() as u64);
+        bar.set_message("sampling vectors");
+    }
+
+    let sample_vectors: Vec<Vec<f32>> = sample_labels.par_iter().map(|labels| {
+        let vector = vector_reader.read(&labels.index).unwrap();
+
+        if let Some(bar) = &progress {
+            let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+            if value % 1000 == 0 {
+                bar.set_position(value as u64);
+            }
+        }
+
+        vector
+    }).collect();
+
+    if let Some(bar) = &progress {
+        bar.finish();
     }
 
 
     for _ in 0..max_iter_count {
+        println!("k-means iter count: {}", iter_count);
+
+        let progress = Some(ProgressBar::new(1000));
+        let progress_done = AtomicUsize::new(0);
+        if let Some(bar) = &progress {
+            bar.set_length(sample_labels.len() as u64);
+            bar.set_message("on disk sampling k-means");
+        }
+    
         iter_count += 1;
         let new_cluster_points: Vec<(ClusterPoint, ClosedVectorIndex)> = sample_labels
             .par_iter_mut()
@@ -112,6 +136,14 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                     vec![None; _num_clusters];
                 cluster_sums[labels.first as usize] =
                     Some((target_point, 1, (first_label_and_dist.1, labels.index)));
+
+                if let Some(bar) = &progress {
+                    let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                    if value % 1000 == 0 {
+                        bar.set_position(value as u64);
+                    }
+                }
+
                 cluster_sums
             })
             // Only a cluster that have been updated in each iterator are added.
@@ -155,16 +187,18 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         if cluster_dists.iter().all(|&x| x <= dist_threshold) {
             break;
         }
-
-        if let Some(bar) = &progress {
-            let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
-            if value % 1000 == 0 {
-                bar.set_position(value as u64);
-            }
-        }
     }
 
+
     let rest_labels = &mut vector_labels[num_vectos_in_chunk..];
+
+    let progress = Some(ProgressBar::new(1000));
+    let progress_done = AtomicUsize::new(0);
+    if let Some(bar) = &progress {
+        bar.set_length(rest_labels.len() as u64);
+        bar.set_message("labelling rest vectors");
+    }
+
     rest_labels.par_iter_mut().for_each(|labels| {
         let vector = vector_reader.read(&labels.index).unwrap();
         let target_point = Point::from_f32_vec(vector);
@@ -179,9 +213,22 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         let (first_label_and_dist, second_label_and_dist) = find_two_smallest(&dists);
         labels.first = first_label_and_dist.0;
         labels.second = second_label_and_dist.0;
+
+        if let Some(bar) = &progress {
+            let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+            if value % 1000 == 0 {
+                bar.set_position(value as u64);
+            }
+        }
     });
 
-    println!("k-means iter count was {}", iter_count);
+    if let Some(bar) = &progress {
+        bar.finish();
+    }
+
+
+    // Sort by orifinal index
+    vector_labels.sort_by(|a, b| a.index.cmp(&b.index));
 
     let cluster_labels = vector_labels.into_par_iter().map(|labels| {
         (labels.first, labels.second)
@@ -361,6 +408,7 @@ mod tests {
     use crate::k_means::on_disk_k_means;
     use crate::{original_vector_reader::OriginalVectorReaderTrait, VectorIndex};
     use anyhow::Result;
+    use bytesize::GB;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     // const SEED: u64 = rand::random();
@@ -409,7 +457,7 @@ mod tests {
         let vector_reader = TestVectorReader::new();
         let num_clusters: u8 = 16;
         let mut rng = SmallRng::seed_from_u64(rand::random());
-        let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, &mut rng);
+        let cluster_labels = on_disk_k_means(&vector_reader, &num_clusters, 1 * GB, &mut rng);
 
         // wip assertion
 

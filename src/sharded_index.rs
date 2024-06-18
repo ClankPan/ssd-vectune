@@ -1,3 +1,6 @@
+use std::sync::atomic;
+use std::sync::atomic::AtomicUsize;
+
 use crate::graph_store::GraphStore;
 use crate::k_means::ClusterLabel;
 use crate::merge_gorder::merge_gorder;
@@ -14,6 +17,7 @@ use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use rayon::prelude::*;
 
 pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
@@ -42,6 +46,7 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             .par_iter()
             .map(|node_id| Point::from_f32_vec(vector_reader.read(node_id).unwrap()))
             .collect();
+        println!("shard len: {}", shard_points.len());
         // 2. vectune::indexに渡すノードのindexとidとのtableを作る
         let (indexed_shard, start_shard_id, backlinks): (
             Vec<(Point, Vec<u32>)>,
@@ -79,12 +84,6 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         })
         .collect();
 
-        // wip
-        println!(
-            "% {}, {}",
-            reordered_node_ids.iter().flatten().count() % 4,
-            indexed_shard.len() % 4
-        );
         assert_eq!(
             reordered_node_ids.iter().flatten().count(),
             indexed_shard.len()
@@ -95,7 +94,13 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         // 3. idをもとにssdに書き込む。
         // 4. bitmapを持っておいて、idがtrueの時には、すでにあるedgesをdeserializeして、extend, dup。
         /* Merging */
-
+        println!("writing edges on disk");
+        let progress = Some(ProgressBar::new(1000));
+        let progress_done = AtomicUsize::new(0);
+        if let Some(bar) = &progress {
+            bar.set_length(indexed_shard.len() as u64);
+            bar.set_message("");
+        }
         indexed_shard.into_par_iter().enumerate().for_each(
             |(shard_id, (point, shard_id_edges))| {
                 let node_id = table_for_shard_id_to_node_id[shard_id];
@@ -130,8 +135,20 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                 graph_on_storage
                     .write_node(&node_id, &point.to_f32_vec(), &edges)
                     .unwrap();
+
+                if let Some(bar) = &progress {
+                    let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                    if value % 1000 == 0 {
+                        bar.set_position(value as u64);
+                    }
+                }
             },
         );
+
+        if let Some(bar) = &progress {
+            bar.finish_with_message("Done");
+        }
+
 
         table_for_shard_id_to_node_id
             .iter()
@@ -141,6 +158,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             "check_node_written is :{}",
             check_node_written.iter().all(|count| *count < 3)
         );
+
+        println!("\n\n");
     }
 
     assert_eq!(
@@ -166,6 +185,7 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             (a[0].1, a[1].1)
         })
         .collect();
+
 
     let get_edges = |id: &u32| -> Vec<u32> {
         let (group_a, group_b) = belong_groups[*id as usize];
