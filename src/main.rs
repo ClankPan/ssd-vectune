@@ -16,15 +16,12 @@ pub mod storage;
 pub mod utils;
 
 use std::{
-    fs::File,
-    io::{BufReader, Write},
-    path::Path,
-    sync::atomic::{self, AtomicUsize},
+    fs::File, io::{BufReader, Write}, path::Path, ptr, sync::atomic::{self, AtomicUsize}
 };
 
 use anyhow::Result;
 // use bit_vec::BitVec;
-use bytesize::KB;
+use bytesize::{GB, KB};
 // use ext_sort::{buffer::LimitedBufferBuilder, ExternalSorter, ExternalSorterBuilder};
 use graph::Graph;
 use indicatif::ProgressBar;
@@ -139,7 +136,7 @@ fn main() -> Result<()> {
             // 10Mだと大きすぎるので、小さなデータセットをここから作る。
             // #[cfg(not(feature = "size"))]
             // let vector_reader = OriginalVectorReader::new(&original_vector_path)?;
-            let vector_reader = {
+            let mut vector_reader = {
                 println!("dataset_size: {} million", dataset_size);
                 OriginalVectorReader::new_with(&original_vector_path, dataset_size)?
             };
@@ -178,7 +175,7 @@ fn main() -> Result<()> {
             let num_clusters: u8 = 16;
             let (cluster_points, reordered_node_ids) = if !skip_merge_index {
                 let (cluster_labels, cluster_points) =
-                    on_disk_k_means(&vector_reader, &num_clusters, max_chunk_giga_byte_size, &mut rng);
+                    on_disk_k_means(&mut vector_reader, &num_clusters, max_chunk_giga_byte_size, &mut rng);
                 let reordered_node_ids = sharded_index(
                     &vector_reader,
                     &mut graph_on_stroage,
@@ -450,8 +447,43 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn search() {
-    println!("Running search...");
+use memmap2::{MmapOptions, Mmap};
+// use std::fs::File;
+use std::time::{Duration, Instant};
+use std::io;
+use std::thread;
+
+fn search() -> io::Result<()>{
+
+    let file_path = "/Volumes/WD_BLACK/index_deep1b/base.1B.fbin";
+    let file = File::open(file_path)?;
+
+    // let mmap = unsafe {
+    //     MmapOptions::new()
+    //         .len(1 << 30) // 1GiBのサイズ指定
+    //         .map(&file)?
+    // };
+    let mmap = unsafe { Mmap::map(&file)? };
+
+    // mmapがすぐに解放されないように、アクセスする（例として最初のバイトを読む）
+    let mut buff = vec![0u8; 5 * GB as usize];
+
+
+    // 時間計測開始
+    let start_time = Instant::now();
+    unsafe {
+        ptr::copy_nonoverlapping(mmap.as_ptr(), buff.as_mut_ptr(), buff.len());
+    }
+    println!("First byte: {}", buff.len());
+
+    // 時間計測終了
+    let elapsed = start_time.elapsed();
+    println!("Time elapsed in memmap operation: {:.2?}", elapsed);
+
+    thread::sleep(Duration::from_secs(10));
+
+    Ok(())
+
 }
 
 use byteorder::{LittleEndian, ReadBytesExt};
