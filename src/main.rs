@@ -16,7 +16,10 @@ pub mod storage;
 pub mod utils;
 
 use std::{
-    fs::File, io::{BufReader, Write}, path::Path, sync::atomic::{self, AtomicUsize}
+    fs::File,
+    io::{BufReader, Write},
+    path::Path,
+    sync::atomic::{self, AtomicUsize},
 };
 
 use anyhow::Result;
@@ -26,7 +29,9 @@ use bytesize::KB;
 use graph::Graph;
 use indicatif::ProgressBar;
 use itertools::Itertools;
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use k_means::on_disk_k_means;
 // use node_reader::{EdgesIterator, GraphOnStorage, GraphOnStorageTrait};
@@ -124,8 +129,14 @@ fn main() -> Result<()> {
                         .display()
                         .to_string(),
                     directory.join("graph.json").display().to_string(),
-                    directory.join("cluster_labels_and_point.json").display().to_string(),
-                    directory.join("reordered_node_ids.json").display().to_string(),
+                    directory
+                        .join("cluster_labels_and_point.json")
+                        .display()
+                        .to_string(),
+                    directory
+                        .join("reordered_node_ids.json")
+                        .display()
+                        .to_string(),
                     directory
                         .join("query.public.10K.fbin")
                         .display()
@@ -183,10 +194,15 @@ fn main() -> Result<()> {
             println!("k-menas on disk");
             // let num_clusters: u8 = 16;
             let (cluster_labels, cluster_points) = if !skip_k_means {
-                let (cluster_labels, cluster_points) =
-                    on_disk_k_means(&mut vector_reader, &num_clusters, max_chunk_giga_byte_size, &mut rng);
+                let (cluster_labels, cluster_points) = on_disk_k_means(
+                    &mut vector_reader,
+                    &num_clusters,
+                    max_chunk_giga_byte_size,
+                    &mut rng,
+                );
 
-                let json_string = serde_json::to_string(&(cluster_labels.clone(), cluster_points.clone()))?;
+                let json_string =
+                    serde_json::to_string(&(cluster_labels.clone(), cluster_points.clone()))?;
                 let mut file = File::create(cluster_labels_and_point_path)?;
                 file.write_all(json_string.as_bytes())?;
 
@@ -472,9 +488,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn search() {
-
-}
+fn search() {}
 
 use byteorder::{LittleEndian, ReadBytesExt};
 

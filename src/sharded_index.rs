@@ -168,7 +168,6 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             bar.finish_with_message("Done");
         }
 
-
         table_for_shard_id_to_node_id
             .iter()
             .for_each(|node_id| check_node_written[*node_id] += 1);
@@ -204,7 +203,6 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             (a[0].1, a[1].1)
         })
         .collect();
-
 
     let get_edges = |id: &u32| -> Vec<u32> {
         let (group_a, group_b) = belong_groups[*id as usize];

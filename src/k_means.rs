@@ -23,7 +23,6 @@ pub type ClusterLabel = u8;
 pub type DistAndNode = (f32, VectorIndex);
 pub type ClosedVectorIndex = VectorIndex;
 
-
 // struct NodeLable {
 //     index: VectorIndex,
 //     first: ClusterLabel,
@@ -102,7 +101,6 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     //     bar.finish();
     // }
 
-
     // for _ in 0..max_iter_count {
     //     println!("k-means iter count: {}", iter_count);
 
@@ -112,7 +110,7 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     //         bar.set_length(sample_labels.len() as u64);
     //         bar.set_message("on disk sampling k-means");
     //     }
-    
+
     //     iter_count += 1;
     //     let new_cluster_points: Vec<(ClusterPoint, ClosedVectorIndex)> = sample_labels
     //         .par_iter_mut()
@@ -189,7 +187,6 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     //     }
     // }
 
-
     // let rest_labels = &mut vector_labels[num_vectos_in_chunk..];
 
     // let progress = Some(ProgressBar::new(1000));
@@ -226,7 +223,6 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     //     bar.finish();
     // }
 
-
     // // Sort by orifinal index
     // vector_labels.sort_by(|a, b| a.index.cmp(&b.index));
 
@@ -236,9 +232,7 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
     // (cluster_labels, cluster_points)
 
-
-/*----------------------- */
-
+    /*----------------------- */
 
     for _ in 0..max_iter_count {
         println!("k-means iter count: {}", iter_count);
@@ -260,47 +254,49 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                 );
                 let chunk_vectors = vector_reader.read_with_range(&start, &end).unwrap();
                 let slice = &mut cluster_labels[start..end];
-                let cluster_sums_in_chunk: Vec<Option<(PointSum, NumInCluster, DistAndNode)>> = slice
-                    .par_iter_mut()
-                    .enumerate()
-                    .map(|(chunk_index, (first_label, second_label))| {
-                        let original_vector_index = chunk_index + start;
-                        let vector = chunk_vectors[chunk_index].clone();
-                        let target_point = Point::from_f32_vec(vector);
-                        let dists: Vec<(u8, f32)> = cluster_points
-                            .par_iter()
-                            .enumerate()
-                            .map(|(cluster_label, (cluster_point, _))| {
-                                (cluster_label as u8, cluster_point.distance(&target_point))
-                            })
-                            .collect();
+                let cluster_sums_in_chunk: Vec<Option<(PointSum, NumInCluster, DistAndNode)>> =
+                    slice
+                        .par_iter_mut()
+                        .enumerate()
+                        .map(|(chunk_index, (first_label, second_label))| {
+                            let original_vector_index = chunk_index + start;
+                            let vector = chunk_vectors[chunk_index].clone();
+                            let target_point = Point::from_f32_vec(vector);
+                            let dists: Vec<(u8, f32)> = cluster_points
+                                .par_iter()
+                                .enumerate()
+                                .map(|(cluster_label, (cluster_point, _))| {
+                                    (cluster_label as u8, cluster_point.distance(&target_point))
+                                })
+                                .collect();
 
-                        let (first_label_and_dist, second_label_and_dist) =
-                            find_two_smallest(&dists);
-                        *first_label = first_label_and_dist.0;
-                        *second_label = second_label_and_dist.0;
+                            let (first_label_and_dist, second_label_and_dist) =
+                                find_two_smallest(&dists);
+                            *first_label = first_label_and_dist.0;
+                            *second_label = second_label_and_dist.0;
 
-                        let _num_clusters = *num_clusters as usize;
-                        let mut cluster_sums: Vec<Option<(PointSum, NumInCluster, DistAndNode)>> =
-                            vec![None; _num_clusters];
-                        cluster_sums[*first_label as usize] = Some((
-                            target_point,
-                            1,
-                            (first_label_and_dist.1, original_vector_index),
-                        ));
+                            let _num_clusters = *num_clusters as usize;
+                            let mut cluster_sums: Vec<
+                                Option<(PointSum, NumInCluster, DistAndNode)>,
+                            > = vec![None; _num_clusters];
+                            cluster_sums[*first_label as usize] = Some((
+                                target_point,
+                                1,
+                                (first_label_and_dist.1, original_vector_index),
+                            ));
 
-                        if let Some(bar) = &progress {
-                            let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
-                            if value % 1000 == 0 {
-                                bar.set_position(value as u64);
+                            if let Some(bar) = &progress {
+                                let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                                if value % 1000 == 0 {
+                                    bar.set_position(value as u64);
+                                }
                             }
-                        }
 
-                        cluster_sums
-                    })
-                    // Only a cluster that have been updated in each iterator are added.
-                    .reduce_with(add_cluster_sums)
-                    .unwrap();
+                            cluster_sums
+                        })
+                        // Only a cluster that have been updated in each iterator are added.
+                        .reduce_with(add_cluster_sums)
+                        .unwrap();
                 cluster_sums_in_chunk
             })
             // .reduce_with(add_cluster_sums)
@@ -312,8 +308,11 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                 match cluster_sums {
                     Some(cluster_sums) => {
                         let (p, n, (_, closed_index)) = cluster_sums;
-                        let ave: Vec<f32> =
-                            p.to_f32_vec().into_par_iter().map(|x| x / n as f32).collect();
+                        let ave: Vec<f32> = p
+                            .to_f32_vec()
+                            .into_par_iter()
+                            .map(|x| x / n as f32)
+                            .collect();
                         // closed_indexは、実際にはPoint::from_f32_vec(ave)に近いvectorのindexとなるわけではないが、
                         // 終了条件としてクラスターの差が閾値以下になることを前提としているので、closed_indexを利用する。
                         (Point::from_f32_vec(ave), closed_index)
@@ -341,7 +340,6 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         if cluster_dists.iter().all(|&x| x <= dist_threshold) {
             break;
         }
-
     }
     (cluster_labels, cluster_points)
 }
@@ -447,7 +445,11 @@ mod tests {
             Ok(vector.clone())
         }
 
-        fn read_with_range(&mut self, start: &VectorIndex, end: &VectorIndex) -> Result<Vec<Vec<f32>>> {
+        fn read_with_range(
+            &mut self,
+            start: &VectorIndex,
+            end: &VectorIndex,
+        ) -> Result<Vec<Vec<f32>>> {
             let vector = self.vectors[*start..*end].to_vec();
             Ok(vector)
         }

@@ -86,30 +86,29 @@ impl<T: bytemuck::Pod> OriginalVectorReaderTrait<T> for OriginalVectorReader<T> 
     }
 
     fn read_with_range(&mut self, start: &VectorIndex, end: &VectorIndex) -> Result<Vec<Vec<T>>> {
-    
         // startとendのバイト位置を計算
         let start_pos = self.start_offset + start * self.vector_dim * 4;
         let end_pos = self.start_offset + end * self.vector_dim * 4;
         let length = end_pos - start_pos;
-    
+
         // ファイルポインタをstart_posに移動
         self.buf_reader.seek(SeekFrom::Start(start_pos as u64))?;
-    
+
         // 必要なバイト数を読み込む
         let mut buffer = vec![0u8; length];
         self.buf_reader.read_exact(&mut buffer)?;
-    
+
         // バイトをT型のベクトルに変換
         let vectors: Vec<T> = bytemuck::try_cast_slice(&buffer)
             .map_err(|e| anyhow!("PodCastError: {:?}", e))?
             .to_vec();
-    
+
         // ベクトルをself.vector_dimごとに区切る
         let vectors = vectors
             .chunks(self.vector_dim)
             .map(|chunk| chunk.to_vec())
             .collect();
-    
+
         Ok(vectors)
     }
 
