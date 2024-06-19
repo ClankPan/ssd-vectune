@@ -73,6 +73,8 @@ enum Commands {
         dataset_size: usize,
 
         max_chunk_giga_byte_size: u64,
+
+        num_clusters: u8,
     },
     /// Executes the search process
     Search,
@@ -97,6 +99,7 @@ fn main() -> Result<()> {
             max_sector_k_byte_size,
             dataset_size,
             max_chunk_giga_byte_size,
+            num_clusters,
         } => {
             let max_sector_byte_size = max_sector_k_byte_size * KB as usize;
 
@@ -178,7 +181,7 @@ fn main() -> Result<()> {
             // println!("edges: {:?}", graph_on_stroage.read_node(&132));
 
             println!("k-menas on disk");
-            let num_clusters: u8 = 16;
+            // let num_clusters: u8 = 16;
             let (cluster_labels, cluster_points) = if !skip_k_means {
                 let (cluster_labels, cluster_points) =
                     on_disk_k_means(&mut vector_reader, &num_clusters, max_chunk_giga_byte_size, &mut rng);

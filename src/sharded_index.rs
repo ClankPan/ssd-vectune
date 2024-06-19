@@ -41,10 +41,30 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         // 1. a cluster labelを持つpointをlist upして、vectune::indexに渡す。
         let table_for_shard_id_to_node_id: Vec<VectorIndex> =
             pickup_target_nodes(&cluster_label, cluster_labels);
+
+        println!("reading from disk");
+        let progress = Some(ProgressBar::new(1000));
+        let progress_done = AtomicUsize::new(0);
+        if let Some(bar) = &progress {
+            bar.set_length(table_for_shard_id_to_node_id.len() as u64);
+            bar.set_message("");
+        }
         let shard_points: Vec<Point> = table_for_shard_id_to_node_id
             .par_iter()
-            .map(|node_id| Point::from_f32_vec(vector_reader.read(node_id).unwrap()))
+            .map(|node_id| {
+                let point = Point::from_f32_vec(vector_reader.read(node_id).unwrap());
+                if let Some(bar) = &progress {
+                    let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
+                    if value % 1000 == 0 {
+                        bar.set_position(value as u64);
+                    }
+                }
+                point
+            })
             .collect();
+        if let Some(bar) = &progress {
+            bar.finish_with_message("Done");
+        }
         println!("shard len: {}", shard_points.len());
         // 2. vectune::indexに渡すノードのindexとidとのtableを作る
         let (indexed_shard, start_shard_id, backlinks): (
