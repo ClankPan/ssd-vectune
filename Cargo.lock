@@ -667,7 +667,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 [[package]]
 name = "vectune"
 version = "0.2.0"
-source = "git+https://github.com/ClankPan/Vectune?rev=f153a5be8340b07e4a7c438435a5449026ed63fe#f153a5be8340b07e4a7c438435a5449026ed63fe"
+source = "git+https://github.com/ClankPan/Vectune?rev=e15faeeff3a0889fb507a78fb01a2d6a7d1ca0c5#e15faeeff3a0889fb507a78fb01a2d6a7d1ca0c5"
 dependencies = [
  "bit-vec",
  "dashmap",
