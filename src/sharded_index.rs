@@ -10,6 +10,7 @@ use crate::storage::Storage;
 use crate::VectorIndex;
 use bit_vec::BitVec;
 use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
@@ -26,7 +27,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     num_node_in_sector: &usize,
     seed: u64,
 ) -> Vec<Vec<u32>> {
-    let mut check_node_written: Vec<u8> = vec![0; cluster_labels.len()];
+    // let mut check_node_written: Vec<u8> = vec![0; cluster_labels.len()];
+    let mut check_node_written = BitVec::from_elem(cluster_labels.len(), false);
     let mut rng = SmallRng::seed_from_u64(seed);
 
     println!("num_node_in_sector: {}", num_node_in_sector);
@@ -42,13 +44,19 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         let table_for_shard_id_to_node_id: Vec<VectorIndex> =
             pickup_target_nodes(&cluster_label, cluster_labels);
 
-        println!("reading from disk");
-        let progress = Some(ProgressBar::new(1000));
+        // println!("reading from disk");
+        let pb = ProgressBar::new(1000);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}").unwrap());
+        pb.set_message("reading points from disk");
+        
+        let progress = Some(pb);
         let progress_done = AtomicUsize::new(0);
         if let Some(bar) = &progress {
             bar.set_length(table_for_shard_id_to_node_id.len() as u64);
-            bar.set_message("");
         }
+
         let shard_points: Vec<Point> = table_for_shard_id_to_node_id
             .par_iter()
             .map(|node_id| {
@@ -62,11 +70,17 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                 point
             })
             .collect();
+
         if let Some(bar) = &progress {
-            bar.finish_with_message("Done");
+            bar.finish();
         }
+
         println!("shard len: {}", shard_points.len());
         // 2. vectune::indexに渡すノードのindexとidとのtableを作る
+        let pb = ProgressBar::new(1000);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}").unwrap());
         let (indexed_shard, start_shard_id, backlinks): (
             Vec<(Point, Vec<u32>)>,
             u32,
@@ -74,41 +88,43 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         ) = vectune::Builder::default()
             .set_seed(seed)
             // .set_r(20) // wip
-            .progress(ProgressBar::new(1000))
+            .progress(pb)
             .build(shard_points);
         let _start_node_id = table_for_shard_id_to_node_id[start_shard_id as usize];
 
         /* Gordering */
-        let get_backlinks = |id: &u32| -> Vec<u32> { backlinks[*id as usize].clone() };
-        let get_edges = |id: &u32| -> Vec<u32> { indexed_shard[*id as usize].1.clone() }; // originalのnode_indexに変換する前に、そのシャードのみでgorderを行う。
-        let target_node_bit_vec = BitVec::from_elem(indexed_shard.len(), true);
-        let window_size = *num_node_in_sector;
-        let reordered_node_ids: Vec<Vec<u32>> = vectune::gorder(
-            get_edges,
-            get_backlinks,
-            target_node_bit_vec,
-            window_size,
-            &mut rng,
-        )
-        .into_par_iter()
-        .map(|group| {
-            if group.len() != *num_node_in_sector {
-                println!("{}", group.len())
-            }
+        {
+            let get_backlinks = |id: &u32| -> Vec<u32> { backlinks[*id as usize].clone() };
+            let get_edges = |id: &u32| -> Vec<u32> { indexed_shard[*id as usize].1.clone() }; // originalのnode_indexに変換する前に、そのシャードのみでgorderを行う。
+            let target_node_bit_vec = BitVec::from_elem(indexed_shard.len(), true);
+            let window_size = *num_node_in_sector;
+            let reordered_node_ids: Vec<Vec<u32>> = vectune::gorder(
+                get_edges,
+                get_backlinks,
+                target_node_bit_vec,
+                window_size,
+                &mut rng,
+            )
+            .into_par_iter()
+            .map(|group| {
+                if group.len() != *num_node_in_sector {
+                    println!("{}", group.len())
+                }
 
-            group
-                .into_par_iter()
-                .map(|shard_index| table_for_shard_id_to_node_id[shard_index as usize] as u32)
-                .collect()
-        })
-        .collect();
+                group
+                    .into_par_iter()
+                    .map(|shard_index| table_for_shard_id_to_node_id[shard_index as usize] as u32)
+                    .collect()
+            })
+            .collect();
 
-        // assert_eq!(
-        //     reordered_node_ids.iter().flatten().count(),
-        //     indexed_shard.len()
-        // );
+            // assert_eq!(
+            //     reordered_node_ids.iter().flatten().count(),
+            //     indexed_shard.len()
+            // );
 
-        groups.extend(reordered_node_ids);
+            groups.extend(reordered_node_ids);
+        }
 
         // 3. idをもとにssdに書き込む。
         // 4. bitmapを持っておいて、idがtrueの時には、すでにあるedgesをdeserializeして、extend, dup。
@@ -132,7 +148,7 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
                 let original_len = edges.len();
 
-                if check_node_written[node_id] >= 1 {
+                if check_node_written.get(node_id).unwrap() {
                     // 元のedgesだけ復号して、追加する
                     edges.extend(graph_on_storage.read_edges(&node_id).unwrap());
                     edges.sort();
@@ -170,12 +186,12 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
         table_for_shard_id_to_node_id
             .iter()
-            .for_each(|node_id| check_node_written[*node_id] += 1);
+            .for_each(|node_id| check_node_written.set(*node_id, true));
 
-        println!(
-            "check_node_written is :{}",
-            check_node_written.par_iter().all(|count| *count < 3)
-        );
+        // println!(
+        //     "check_node_written is :{}",
+        //     check_node_written.par_iter().all(|count| *count < 3)
+        // );
 
         println!("\n\n");
     }
