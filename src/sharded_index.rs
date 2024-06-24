@@ -42,7 +42,7 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             |(shard_id, (point, shard_id_edges))| {
                 let node_id = prev_table_for_shard_id_to_node_id[shard_id];
                 let mut edges: Vec<u32> = shard_id_edges
-                    .into_par_iter()
+                    .into_iter()
                     .map(|edge_shard_id| {
                         prev_table_for_shard_id_to_node_id[edge_shard_id as usize] as u32
                     })
@@ -126,7 +126,7 @@ fn execute_index(
 ) -> Option<(Vec<(Point, Vec<u32>)>, Vec<VectorIndex>)> {
     if let Some((shard_points, table_for_shard_id_to_node_id)) = shard {
 
-        let indexed_shard_len = shard_points.len();
+        let shard_points_len = shard_points.len();
 
         let (indexed_shard, start_shard_id, backlinks): (
             Vec<(Point, Vec<u32>)>,
@@ -152,14 +152,24 @@ fn execute_index(
             let get_edges = |id: &u32| -> Vec<u32> { indexed_shard[*id as usize].1.clone() }; // originalのnode_indexに変換する前に、そのシャードのみでgorderを行う。
             let target_node_bit_vec = BitVec::from_elem(indexed_shard.len(), true);
             let window_size = *num_node_in_sector;
-            let reordered_node_ids: Vec<Vec<u32>> = vectune::gorder(
+            let shard_reordered_node_ids = vectune::gorder(
                 get_edges,
                 get_backlinks,
                 target_node_bit_vec,
                 window_size,
                 &mut rng,
                 Some(pb),
-            )
+            );
+            // debug
+            let mut test_bit_map = BitVec::from_elem(shard_points_len, false);
+            shard_reordered_node_ids.iter().for_each(|group| group.iter().for_each(|shard_index| test_bit_map.set(*shard_index as usize, true)));
+            if test_bit_map.iter().filter(|bit| !bit).count() == 0 {
+                println!("all nodes is included")
+            } else {
+                println!("thre are missing nodes in reordered_node_ids")
+            }
+
+            let reordered_node_ids: Vec<Vec<u32>> = shard_reordered_node_ids
             .into_par_iter()
             .map(|group| {
                 if group.len() != *num_node_in_sector {
@@ -178,7 +188,7 @@ fn execute_index(
             //     indexed_shard.len()
             // );
 
-            assert_eq!(reordered_node_ids.iter().flatten().count(), indexed_shard_len);
+            assert_eq!(reordered_node_ids.iter().flatten().count(), shard_points_len);
 
             merge_gorder_groups.extend(reordered_node_ids);
         }
@@ -225,51 +235,51 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         let pb3 = m.add(ProgressBar::new(100).with_style(style.clone()));
         let pb4 = m.add(ProgressBar::new(100).with_style(style.clone()));
 
-        let next_shard = store_and_load(
-                        indexed_shard_for_storing,
-                        &mut check_node_written,
-                        cluster_label,
-                        cluster_labels,
-                        vector_reader,
-                        graph_on_storage,
-                        pb1,
-                        pb2,
-                    );
+        // let next_shard = store_and_load(
+        //                 indexed_shard_for_storing,
+        //                 &mut check_node_written,
+        //                 cluster_label,
+        //                 cluster_labels,
+        //                 vector_reader,
+        //                 graph_on_storage,
+        //                 pb1,
+        //                 pb2,
+        //             );
 
-        let executed_indexed_shard =
-                    execute_index(
-                        shard_for_execution,
-                        seed,
-                        &mut merge_gorder_groups,
-                        num_node_in_sector,
-                        pb3,
-                        pb4,
-                    );
+        // let executed_indexed_shard =
+        //             execute_index(
+        //                 shard_for_execution,
+        //                 seed,
+        //                 &mut merge_gorder_groups,
+        //                 num_node_in_sector,
+        //                 pb3,
+        //                 pb4,
+        //             );
 
-        // let (next_shard, executed_indexed_shard) = rayon::join(
-        //     || {
-        //         store_and_load(
-        //             indexed_shard_for_storing,
-        //             &mut check_node_written,
-        //             cluster_label,
-        //             cluster_labels,
-        //             vector_reader,
-        //             graph_on_storage,
-        //             pb1,
-        //             pb2,
-        //         )
-        //     },
-        //     || {
-        //         execute_index(
-        //             shard_for_execution,
-        //             seed,
-        //             &mut merge_gorder_groups,
-        //             num_node_in_sector,
-        //             pb3,
-        //             pb4,
-        //         )
-        //     },
-        // );
+        let (next_shard, executed_indexed_shard) = rayon::join(
+            || {
+                store_and_load(
+                    indexed_shard_for_storing,
+                    &mut check_node_written,
+                    cluster_label,
+                    cluster_labels,
+                    vector_reader,
+                    graph_on_storage,
+                    pb1,
+                    pb2,
+                )
+            },
+            || {
+                execute_index(
+                    shard_for_execution,
+                    seed,
+                    &mut merge_gorder_groups,
+                    num_node_in_sector,
+                    pb3,
+                    pb4,
+                )
+            },
+        );
 
         shard_for_execution = next_shard;
         indexed_shard_for_storing = executed_indexed_shard;
@@ -312,6 +322,7 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
         member
     };
+
 
     let target_node_bit_vec = BitVec::from_elem(belong_groups.len(), true);
     let window_size = *num_node_in_sector;

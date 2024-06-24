@@ -371,7 +371,7 @@ fn main() -> Result<()> {
 
                 let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
                 let groundtruth: Vec<Vec<u32>> =
-                    read_ivecs("test_vectors/gt/deep1M_groundtruth.ivecs").unwrap();
+                    read_ivecs("test_vectors/gt/deep10M_groundtruth.ivecs").unwrap();
 
                 let progress = Some(ProgressBar::new(1000));
                 let progress_done = AtomicUsize::new(0);
