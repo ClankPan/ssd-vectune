@@ -9,6 +9,7 @@ use crate::point::Point;
 use crate::storage::Storage;
 use crate::VectorIndex;
 use bit_vec::BitVec;
+use indicatif::MultiProgress;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use itertools::Itertools;
@@ -26,23 +27,18 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     cluster_labels: &[(ClusterLabel, ClusterLabel)],
     vector_reader: &R,
     graph_on_storage: &GraphStore<Storage>,
+    pb1: ProgressBar,
+    pb2: ProgressBar,
 ) -> Option<(Vec<Point>, Vec<VectorIndex>)> {
-    let pb = ProgressBar::new(1000);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template(
-                "{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}",
-            )
-            .unwrap(),
-    );
 
     /* Store previous result indexed points */
     if let Some((prev_indexed_shard, prev_table_for_shard_id_to_node_id)) = prev_result {
+        let pb = pb1;
         pb.set_length(prev_indexed_shard.len() as u64);
         pb.set_message("storing indexed-points to disk");
         let progress_done = AtomicUsize::new(0);
 
-        prev_indexed_shard.into_par_iter().enumerate().for_each(
+        prev_indexed_shard.into_iter().enumerate().for_each(
             |(shard_id, (point, shard_id_edges))| {
                 let node_id = prev_table_for_shard_id_to_node_id[shard_id];
                 let mut edges: Vec<u32> = shard_id_edges
@@ -85,18 +81,21 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         prev_table_for_shard_id_to_node_id
             .iter()
             .for_each(|node_id| check_node_written.set(*node_id, true));
+
+        pb.finish();
     }
 
     /* Load next cluster node points */
     let indexed_shard = if let Some(table_for_shard_id_to_node_id) =
         pickup_target_nodes(&next_cluster_label, cluster_labels)
     {
+        let pb = pb2;
         pb.set_length(table_for_shard_id_to_node_id.len() as u64);
         pb.set_message("reading points from disk");
         let progress_done = AtomicUsize::new(0);
 
         let shard_points: Vec<Point> = table_for_shard_id_to_node_id
-            .par_iter()
+            .iter()
             .map(|node_id| {
                 let point = Point::from_f32_vec(vector_reader.read(node_id).unwrap());
                 let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
@@ -107,11 +106,12 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             })
             .collect();
 
+        pb.finish();
+
         Some((shard_points, table_for_shard_id_to_node_id))
     } else {
         None
     };
-    pb.finish();
 
     indexed_shard
 }
@@ -121,12 +121,12 @@ fn execute_index(
     seed: u64,
     merge_gorder_groups: &mut Vec<Vec<u32>>,
     num_node_in_sector: &usize,
+    pb1: ProgressBar,
+    pb2: ProgressBar
 ) -> Option<(Vec<(Point, Vec<u32>)>, Vec<VectorIndex>)> {
     if let Some((shard_points, table_for_shard_id_to_node_id)) = shard {
-        let pb = ProgressBar::new(1000);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}").unwrap());
+
+        let indexed_shard_len = shard_points.len();
 
         let (indexed_shard, start_shard_id, backlinks): (
             Vec<(Point, Vec<u32>)>,
@@ -135,7 +135,7 @@ fn execute_index(
         ) = vectune::Builder::default()
             .set_seed(seed)
             // .set_r(20) // wip
-            .progress(pb)
+            .progress(pb1)
             .build(shard_points);
         let _start_node_id = table_for_shard_id_to_node_id[start_shard_id as usize];
 
@@ -143,7 +143,7 @@ fn execute_index(
 
         /* Gordering */
         {
-            let pb = ProgressBar::new(1000);
+            let pb = pb2;
             pb.set_style(
                 ProgressStyle::default_bar()
                     .template("{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}").unwrap());
@@ -178,6 +178,8 @@ fn execute_index(
             //     indexed_shard.len()
             // );
 
+            assert_eq!(reordered_node_ids.iter().flatten().count(), indexed_shard_len);
+
             merge_gorder_groups.extend(reordered_node_ids);
         }
 
@@ -201,6 +203,10 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
     println!("num_node_in_sector: {}", num_node_in_sector);
 
+    let m = MultiProgress::new();
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}").unwrap();
+
     // wip
     //　ノードが属するgroupをtupleで記録する。
     // そのために、globalにextendして、その際にoriginalのindexに戻しておく。
@@ -209,46 +215,72 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     let mut shard_for_execution = None;
     let mut indexed_shard_for_storing = None;
 
-    for cluster_label in 0..*num_clusters + 2 {
+    // for cluster_label in 0..*num_clusters + 2 {
+    let mut cluster_label: u8 = 0;
+    loop {
         println!("shard: {}", cluster_label);
 
-        // let next_shard = store_and_load(
-        //     indexed_shard_for_storing,
-        //     &mut check_node_written,
-        //     cluster_label,
-        //     cluster_labels,
-        //     vector_reader,
-        //     graph_on_storage,
+        let pb1 = m.add(ProgressBar::new(100).with_style(style.clone()));
+        let pb2 = m.add(ProgressBar::new(100).with_style(style.clone()));
+        let pb3 = m.add(ProgressBar::new(100).with_style(style.clone()));
+        let pb4 = m.add(ProgressBar::new(100).with_style(style.clone()));
+
+        let next_shard = store_and_load(
+                        indexed_shard_for_storing,
+                        &mut check_node_written,
+                        cluster_label,
+                        cluster_labels,
+                        vector_reader,
+                        graph_on_storage,
+                        pb1,
+                        pb2,
+                    );
+
+        let executed_indexed_shard =
+                    execute_index(
+                        shard_for_execution,
+                        seed,
+                        &mut merge_gorder_groups,
+                        num_node_in_sector,
+                        pb3,
+                        pb4,
+                    );
+
+        // let (next_shard, executed_indexed_shard) = rayon::join(
+        //     || {
+        //         store_and_load(
+        //             indexed_shard_for_storing,
+        //             &mut check_node_written,
+        //             cluster_label,
+        //             cluster_labels,
+        //             vector_reader,
+        //             graph_on_storage,
+        //             pb1,
+        //             pb2,
+        //         )
+        //     },
+        //     || {
+        //         execute_index(
+        //             shard_for_execution,
+        //             seed,
+        //             &mut merge_gorder_groups,
+        //             num_node_in_sector,
+        //             pb3,
+        //             pb4,
+        //         )
+        //     },
         // );
-
-        // let executed_indexed_shard =
-        //     execute_index(shard_for_execution, seed, &mut merge_gorder_groups, num_node_in_sector);
-
-        let (next_shard, executed_indexed_shard) = rayon::join(
-            || {
-                store_and_load(
-                    indexed_shard_for_storing,
-                    &mut check_node_written,
-                    cluster_label,
-                    cluster_labels,
-                    vector_reader,
-                    graph_on_storage,
-                )
-            },
-            || {
-                execute_index(
-                    shard_for_execution,
-                    seed,
-                    &mut merge_gorder_groups,
-                    num_node_in_sector,
-                )
-            },
-        );
 
         shard_for_execution = next_shard;
         indexed_shard_for_storing = executed_indexed_shard;
 
         println!("\n\n");
+
+        cluster_label += 1;
+
+        if shard_for_execution.is_none() && indexed_shard_for_storing.is_none() {
+            break
+        }
     }
 
     let belong_groups: Vec<(u32, u32)> = merge_gorder_groups
@@ -269,6 +301,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
             (a[0].1, a[1].1)
         })
         .collect();
+
+    assert_eq!(belong_groups.len(), vector_reader.get_num_vectors());
 
     let get_edges = |id: &u32| -> Vec<u32> {
         let (group_a, group_b) = belong_groups[*id as usize];

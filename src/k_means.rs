@@ -56,7 +56,13 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     let mut iter_count = 0;
 
     // let max_chunk_byte_size = 20 * GB as usize;
-    let num_vectos_in_chunk = max_chunk_byte_size / (vector_reader.get_vector_dim() * 4);
+    let all_vectors_byte_size = vector_reader.get_vector_dim() * core::mem::size_of::<f32>();
+    let num_vectos_in_chunk = if max_chunk_byte_size >= all_vectors_byte_size {
+        vector_reader.get_vector_dim()
+    } else {
+        max_chunk_byte_size / all_vectors_byte_size
+    };
+    // let num_vectos_in_chunk = max_chunk_byte_size / (vector_reader.get_vector_dim() * 4);
     println!("num_vectos_in_chunk: {}", num_vectos_in_chunk);
 
     /*
