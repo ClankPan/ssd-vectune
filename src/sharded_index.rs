@@ -19,6 +19,7 @@ use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use std::thread;
 
 fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     prev_result: Option<(Vec<(Point, Vec<u32>)>, Vec<VectorIndex>)>,
@@ -161,13 +162,13 @@ fn execute_index(
                 Some(pb),
             );
             // debug
-            let mut test_bit_map = BitVec::from_elem(shard_points_len, false);
-            shard_reordered_node_ids.iter().for_each(|group| group.iter().for_each(|shard_index| test_bit_map.set(*shard_index as usize, true)));
-            if test_bit_map.iter().filter(|bit| !bit).count() == 0 {
-                println!("all nodes is included")
-            } else {
-                println!("thre are missing nodes in reordered_node_ids")
-            }
+            // let mut test_bit_map = BitVec::from_elem(shard_points_len, false);
+            // shard_reordered_node_ids.iter().for_each(|group| group.iter().for_each(|shard_index| test_bit_map.set(*shard_index as usize, true)));
+            // if test_bit_map.iter().filter(|bit| !bit).count() == 0 {
+            //     println!("all nodes is included")
+            // } else {
+            //     println!("thre are missing nodes in reordered_node_ids")
+            // }
 
             let reordered_node_ids: Vec<Vec<u32>> = shard_reordered_node_ids
             .into_par_iter()
@@ -235,29 +236,8 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         let pb3 = m.add(ProgressBar::new(100).with_style(style.clone()));
         let pb4 = m.add(ProgressBar::new(100).with_style(style.clone()));
 
-        // let next_shard = store_and_load(
-        //                 indexed_shard_for_storing,
-        //                 &mut check_node_written,
-        //                 cluster_label,
-        //                 cluster_labels,
-        //                 vector_reader,
-        //                 graph_on_storage,
-        //                 pb1,
-        //                 pb2,
-        //             );
-
-        // let executed_indexed_shard =
-        //             execute_index(
-        //                 shard_for_execution,
-        //                 seed,
-        //                 &mut merge_gorder_groups,
-        //                 num_node_in_sector,
-        //                 pb3,
-        //                 pb4,
-        //             );
-
-        let (next_shard, executed_indexed_shard) = rayon::join(
-            || {
+        let (next_shard, executed_indexed_shard) = thread::scope(|s| {
+            let store_and_load_handle = s.spawn(|| {
                 store_and_load(
                     indexed_shard_for_storing,
                     &mut check_node_written,
@@ -268,8 +248,9 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                     pb1,
                     pb2,
                 )
-            },
-            || {
+            });
+
+            let executed_indexed_shard =
                 execute_index(
                     shard_for_execution,
                     seed,
@@ -277,9 +258,39 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                     num_node_in_sector,
                     pb3,
                     pb4,
-                )
-            },
-        );
+                );
+
+            let next_shard = store_and_load_handle.join().expect("Failed to join store_and_load thread");
+
+            (next_shard, executed_indexed_shard)
+        });
+        
+        // let next_shard = store_and_load_handle.join().expect("Failed to join store_and_load thread");
+
+        // let (next_shard, executed_indexed_shard) = rayon::join(
+        //     || {
+        //         store_and_load(
+        //             indexed_shard_for_storing,
+        //             &mut check_node_written,
+        //             cluster_label,
+        //             cluster_labels,
+        //             vector_reader,
+        //             graph_on_storage,
+        //             pb1,
+        //             pb2,
+        //         )
+        //     },
+        //     || {
+        //         execute_index(
+        //             shard_for_execution,
+        //             seed,
+        //             &mut merge_gorder_groups,
+        //             num_node_in_sector,
+        //             pb3,
+        //             pb4,
+        //         )
+        //     },
+        // );
 
         shard_for_execution = next_shard;
         indexed_shard_for_storing = executed_indexed_shard;
