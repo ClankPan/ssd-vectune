@@ -16,10 +16,7 @@ pub mod storage;
 pub mod utils;
 
 use std::{
-    fs::File,
-    io::{BufReader, Write},
-    path::Path,
-    sync::atomic::{self, AtomicUsize},
+    fmt::format, fs::File, io::{BufReader, Write}, path::Path, sync::atomic::{self, AtomicUsize}
 };
 
 use anyhow::Result;
@@ -73,6 +70,8 @@ enum Commands {
 
         original_vector_path: String,
 
+        destination_directory: String,
+
         max_sector_k_byte_size: usize,
 
         dataset_size: usize,
@@ -101,6 +100,7 @@ fn main() -> Result<()> {
             skip_make_backlinks, // wip
             skip_test_recall_rate,
             original_vector_path,
+            destination_directory,
             max_sector_k_byte_size,
             dataset_size,
             max_chunk_giga_byte_size,
@@ -109,47 +109,11 @@ fn main() -> Result<()> {
             let max_sector_byte_size = max_sector_k_byte_size * KB as usize;
 
             /* file path */
-            let (
-                unordered_graph_storage_path,
-                ordered_graph_storage_path,
-                graph_json_path,
-                cluster_labels_and_point_path,
-                reordered_node_ids_path,
-                query_vector_path,
-                _groundtruth_path,
-                _backlinks_path,
-            ) = if let Some(directory) = Path::new(&original_vector_path).parent() {
-                (
-                    directory
-                        .join("unordered_graph.10M.graph")
-                        .display()
-                        .to_string(),
-                    directory
-                        .join("ordered_graph.10M.graph")
-                        .display()
-                        .to_string(),
-                    directory.join("graph.json").display().to_string(),
-                    directory
-                        .join("cluster_labels_and_point.json")
-                        .display()
-                        .to_string(),
-                    directory
-                        .join("reordered_node_ids.json")
-                        .display()
-                        .to_string(),
-                    directory
-                        .join("query.public.10K.fbin")
-                        .display()
-                        .to_string(),
-                    directory
-                        .join("groundtruth.public.10K.ibin")
-                        .display()
-                        .to_string(),
-                    directory.join("backlinks.json").display().to_string(),
-                )
-            } else {
-                panic!()
-            };
+            let unordered_graph_storage_path    = format!("{destination_directory}/unordered_graph.graph");
+            let ordered_graph_storage_path      = format!("{destination_directory}/ordered_graph.graph");
+            let graph_json_path                 = format!("{destination_directory}/graph.json");
+            let cluster_labels_and_point_path   = format!("{destination_directory}/cluster_labels_and_point.json");
+            let reordered_node_ids_path         = format!("{destination_directory}/reordered_node_ids.json");
 
             /* read original vectors */
             println!("reading vector file");
@@ -172,7 +136,6 @@ fn main() -> Result<()> {
             /*
             sector_byte_sizeは、maxなのか、実際に梱包した時のサイズなのかをはっきりさせる。
             */
-
             let storage = if !skip_merge_index {
                 Storage::new_with_empty_file(
                     &unordered_graph_storage_path,
@@ -369,7 +332,7 @@ fn main() -> Result<()> {
 
                 /* recall-rate */
 
-                let query_vector_reader = OriginalVectorReader::new(&query_vector_path)?;
+                let query_vector_reader = OriginalVectorReader::new("test_vectors/query.public.10K.fbin")?;
                 let groundtruth: Vec<Vec<u32>> =
                     read_ivecs("test_vectors/gt/deep10M_groundtruth.ivecs").unwrap();
 
