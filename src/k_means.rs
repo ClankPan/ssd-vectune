@@ -1,7 +1,6 @@
 use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use bytesize::GB;
-use bytesize::KB;
 use indicatif::ProgressBar;
 use rand::rngs::SmallRng;
 use rand::thread_rng;
@@ -41,9 +40,12 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 ) {
     assert!(*num_clusters > 2);
 
-    println!("max_chunk_giga_byte_size: {} GiB ({} Byte)", max_chunk_giga_byte_size, max_chunk_giga_byte_size * GB);
+    println!(
+        "max_chunk_giga_byte_size: {} GiB ({} Byte)",
+        max_chunk_giga_byte_size,
+        max_chunk_giga_byte_size * GB
+    );
     let max_chunk_byte_size = (max_chunk_giga_byte_size * GB) as usize;
-
 
     let mut cluster_points: Vec<(ClusterPoint, ClosedVectorIndex)> = (0..*num_clusters)
         .map(|_| {
@@ -79,12 +81,10 @@ pub fn on_disk_k_means<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         let new_cluster_points = (0..vector_reader.get_num_vectors())
             .step_by(num_vectos_in_chunk)
             .map(|start| {
-                let end = std::cmp::min(
-                    start + num_vectos_in_chunk,
-                    vector_reader.get_num_vectors(),
-                );
+                let end =
+                    std::cmp::min(start + num_vectos_in_chunk, vector_reader.get_num_vectors());
                 let chunk_vectors = vector_reader.read_with_range(&start, &end).unwrap();
-                assert_eq!(chunk_vectors.len(),  end - start);
+                assert_eq!(chunk_vectors.len(), end - start);
                 let slice = &mut cluster_labels[start..end];
                 let cluster_sums_in_chunk: Vec<Option<(PointSum, NumInCluster, DistAndNode)>> =
                     slice
@@ -248,22 +248,27 @@ fn min_by_dist(a: DistAndNode, b: DistAndNode) -> DistAndNode {
 mod tests {
     use crate::k_means::on_disk_k_means;
     use crate::original_vector_reader::OriginalVectorReader;
-    use crate::{original_vector_reader::OriginalVectorReaderTrait, VectorIndex};
-    use anyhow::Result;
     use bytesize::GB;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
-    use bit_vec::BitVec;
-
+    use rand::{rngs::SmallRng, SeedableRng};
 
     #[test]
     fn testing_on_disk_k_means() {
-        let mut vector_reader = OriginalVectorReader::new_with("test_vectors/base.10M.fbin", 1).unwrap();
+        let mut vector_reader =
+            OriginalVectorReader::new_with("test_vectors/base.10M.fbin", 1).unwrap();
         let num_clusters: u8 = 16;
         let mut rng = SmallRng::seed_from_u64(rand::random());
-        let (cluster_labels, cluster_points) = on_disk_k_means(&mut vector_reader, &num_clusters, 1 * GB, &mut rng);
+        let (cluster_labels, cluster_points) =
+            on_disk_k_means(&mut vector_reader, &num_clusters, 1 * GB, &mut rng);
 
-        assert!(cluster_labels.iter().all(|(a, b)| (a < &num_clusters) && (b < &num_clusters)));
-        let deplicateds = cluster_labels.iter().enumerate().filter(|(_i, (a, b))| a == b).map(|(i,(a, b))| (i, *a, *b)).collect::<Vec<(usize, u8, u8)>>();
+        assert!(cluster_labels
+            .iter()
+            .all(|(a, b)| (a < &num_clusters) && (b < &num_clusters)));
+        let deplicateds = cluster_labels
+            .iter()
+            .enumerate()
+            .filter(|(_i, (a, b))| a == b)
+            .map(|(i, (a, b))| (i, *a, *b))
+            .collect::<Vec<(usize, u8, u8)>>();
         println!("{:?}", deplicateds);
         assert_eq!(deplicateds.len(), 0);
         // let collect_nodes = BitVec::from_elem(vector_reader.get_num_vectors(), false);

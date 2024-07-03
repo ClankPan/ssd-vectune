@@ -14,6 +14,7 @@ pub struct Cache<S: StorageTrait> {
 impl<S: StorageTrait> Cache<S> {
     pub fn new(num_sector: usize, vector_dim: usize, edge_max_digree: usize, storage: S) -> Self {
         let sector_byte_size: usize = storage.sector_byte_size();
+        println!("storage.sector_byte_size(): {}", storage.sector_byte_size());
         let node_byte_size: usize = vector_dim * 4 + edge_max_digree * 4 + 4;
         // let num_node_in_sector: usize = sector_byte_size / node_byte_size;
         Self {
@@ -38,6 +39,7 @@ where
         let mut cache = self.cache.borrow_mut();
 
         let sector = if cache_table[sector_index].0 == usize::MAX {
+            println!("miss");
             // Eviction
             let cache_index = cache_table
                 .iter()
@@ -54,6 +56,7 @@ where
             cache[cache_index] = buffer;
             &cache[cache_index]
         } else {
+            println!("hit");
             let cache_index = cache_table[sector_index].0;
             &cache[cache_index]
         };

@@ -3,11 +3,11 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::graph_store::GraphStore;
 use crate::k_means::ClusterLabel;
+use crate::k_means::VectorIndex;
 use crate::merge_gorder::merge_gorder;
 use crate::original_vector_reader::OriginalVectorReaderTrait;
 use crate::point::Point;
 use crate::storage::Storage;
-use crate::VectorIndex;
 use bit_vec::BitVec;
 use indicatif::MultiProgress;
 use indicatif::ProgressBar;
@@ -15,9 +15,9 @@ use indicatif::ProgressStyle;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
-use rayon::iter::IndexedParallelIterator;
+// use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
-use rayon::iter::IntoParallelRefIterator;
+// use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::thread;
 
@@ -31,7 +31,6 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     pb1: ProgressBar,
     pb2: ProgressBar,
 ) -> Option<(Vec<Point>, Vec<VectorIndex>)> {
-
     /* Store previous result indexed points */
     if let Some((prev_indexed_shard, prev_table_for_shard_id_to_node_id)) = prev_result {
         let pb = pb1;
@@ -123,10 +122,9 @@ fn execute_index(
     merge_gorder_groups: &mut Vec<Vec<u32>>,
     num_node_in_sector: &usize,
     pb1: ProgressBar,
-    pb2: ProgressBar
+    pb2: ProgressBar,
 ) -> Option<(Vec<(Point, Vec<u32>)>, Vec<VectorIndex>)> {
     if let Some((shard_points, table_for_shard_id_to_node_id)) = shard {
-
         let shard_points_len = shard_points.len();
 
         let (indexed_shard, start_shard_id, backlinks): (
@@ -171,25 +169,30 @@ fn execute_index(
             // }
 
             let reordered_node_ids: Vec<Vec<u32>> = shard_reordered_node_ids
-            .into_par_iter()
-            .map(|group| {
-                if group.len() != *num_node_in_sector {
-                    println!("{}", group.len())
-                }
+                .into_par_iter()
+                .map(|group| {
+                    if group.len() != *num_node_in_sector {
+                        println!("{}", group.len())
+                    }
 
-                group
-                    .into_par_iter()
-                    .map(|shard_index| table_for_shard_id_to_node_id[shard_index as usize] as u32)
-                    .collect()
-            })
-            .collect();
+                    group
+                        .into_par_iter()
+                        .map(|shard_index| {
+                            table_for_shard_id_to_node_id[shard_index as usize] as u32
+                        })
+                        .collect()
+                })
+                .collect();
 
             // assert_eq!(
             //     reordered_node_ids.iter().flatten().count(),
             //     indexed_shard.len()
             // );
 
-            assert_eq!(reordered_node_ids.iter().flatten().count(), shard_points_len);
+            assert_eq!(
+                reordered_node_ids.iter().flatten().count(),
+                shard_points_len
+            );
 
             merge_gorder_groups.extend(reordered_node_ids);
         }
@@ -203,7 +206,7 @@ fn execute_index(
 pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
     graph_on_storage: &GraphStore<Storage>,
-    num_clusters: &ClusterLabel,
+    _num_clusters: &ClusterLabel,
     cluster_labels: &[(ClusterLabel, ClusterLabel)],
     num_node_in_sector: &usize,
     seed: u64,
@@ -216,7 +219,10 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
     let m = MultiProgress::new();
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}").unwrap();
+        .template(
+            "{spinner:.green}  {msg}\n[{elapsed_precise}] {percent:>3}% {wide_bar:.cyan/blue}",
+        )
+        .unwrap();
 
     // wip
     //　ノードが属するgroupをtupleで記録する。
@@ -250,21 +256,22 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                 )
             });
 
-            let executed_indexed_shard =
-                execute_index(
-                    shard_for_execution,
-                    seed,
-                    &mut merge_gorder_groups,
-                    num_node_in_sector,
-                    pb3,
-                    pb4,
-                );
+            let executed_indexed_shard = execute_index(
+                shard_for_execution,
+                seed,
+                &mut merge_gorder_groups,
+                num_node_in_sector,
+                pb3,
+                pb4,
+            );
 
-            let next_shard = store_and_load_handle.join().expect("Failed to join store_and_load thread");
+            let next_shard = store_and_load_handle
+                .join()
+                .expect("Failed to join store_and_load thread");
 
             (next_shard, executed_indexed_shard)
         });
-        
+
         // let next_shard = store_and_load_handle.join().expect("Failed to join store_and_load thread");
 
         // let (next_shard, executed_indexed_shard) = rayon::join(
@@ -300,7 +307,7 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         cluster_label += 1;
 
         if shard_for_execution.is_none() && indexed_shard_for_storing.is_none() {
-            break
+            break;
         }
     }
 
@@ -333,7 +340,6 @@ pub fn sharded_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
         member
     };
-
 
     let target_node_bit_vec = BitVec::from_elem(belong_groups.len(), true);
     let window_size = *num_node_in_sector;
