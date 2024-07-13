@@ -31,7 +31,7 @@ use bytesize::KB;
 use graph::{Graph, UnorderedGraph, GraphMetadata};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use ndarray::{Array2, ArrayView2, Axis};
+// use ndarray::{Array2, ArrayView2, Axis};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -44,7 +44,7 @@ use rand::{rngs::SmallRng, thread_rng, Rng, SeedableRng};
 use sharded_index::sharded_index;
 // use storage::StorageTrait;
 // use single_index::single_index;
-use vectune::{GraphInterface, PointInterface};
+use vectune::PointInterface;
 
 use crate::{graph_store::GraphStore, point::Point, storage::Storage};
 
@@ -146,7 +146,7 @@ use serde::{Deserialize, Serialize};
 
 
 
-fn encode_24bits(v: [u8; 8]) -> [u8; 3] {
+fn _encode_24bits(v: [u8; 8]) -> [u8; 3] {
     let u3_0 = v[0] << 5;
     let u3_1 = v[1] << 2;
     let u3_2_1: u8 = v[2] >> 1;
@@ -169,7 +169,7 @@ fn encode_24bits(v: [u8; 8]) -> [u8; 3] {
     [u3_a, u3_b, u3_c]
 }
 
-fn decode(v: [u8; 3]) -> [u8; 8] {
+fn _decode(v: [u8; 3]) -> [u8; 8] {
     let u8_0 = v[0] >> 5;
     let u8_1 = (v[0] & 0b00011100) >> 2;
     let u8_2_1 = v[0] & 0b00000011;
@@ -187,25 +187,25 @@ fn decode(v: [u8; 3]) -> [u8; 8] {
 
 }
 
-fn vec_u3_encoder(vecs: [u8; 32]) -> [u8; 12] {
+fn _vec_u3_encoder(vecs: [u8; 32]) -> [u8; 12] {
 
     let mut encoded = Vec::new();
 
-    encoded.extend(encode_24bits(vecs[0..8].try_into().unwrap()));
-    encoded.extend(encode_24bits(vecs[8..16].try_into().unwrap()));
-    encoded.extend(encode_24bits(vecs[16..24].try_into().unwrap()));
-    encoded.extend(encode_24bits(vecs[24..32].try_into().unwrap()));
+    encoded.extend(_encode_24bits(vecs[0..8].try_into().unwrap()));
+    encoded.extend(_encode_24bits(vecs[8..16].try_into().unwrap()));
+    encoded.extend(_encode_24bits(vecs[16..24].try_into().unwrap()));
+    encoded.extend(_encode_24bits(vecs[24..32].try_into().unwrap()));
 
     encoded.try_into().unwrap()
 }
 
-fn vec_u3_decoder(vecs: [u8; 12]) -> [u8; 32] {
+fn _vec_u3_decoder(vecs: [u8; 12]) -> [u8; 32] {
     let mut decoded = Vec::new();
 
-    decoded.extend(decode(vecs[0..3].try_into().unwrap()));
-    decoded.extend(decode(vecs[3..6].try_into().unwrap()));
-    decoded.extend(decode(vecs[6..9].try_into().unwrap()));
-    decoded.extend(decode(vecs[9..12].try_into().unwrap()));
+    decoded.extend(_decode(vecs[0..3].try_into().unwrap()));
+    decoded.extend(_decode(vecs[3..6].try_into().unwrap()));
+    decoded.extend(_decode(vecs[6..9].try_into().unwrap()));
+    decoded.extend(_decode(vecs[9..12].try_into().unwrap()));
 
     decoded.try_into().unwrap()
 }
@@ -229,7 +229,7 @@ impl TreeUtils {
         }
     }
 
-    pub fn encode(root: Tree) -> ([[u8; 7]; 32], [[u8; 12]; 90]) {
+    pub fn _encode(root: Tree) -> ([[u8; 7]; 32], [[u8; 12]; 90]) {
         // depth 0
         let Tree::Node(s0, n0, n1) = root else {panic!()};
         //  
@@ -241,9 +241,9 @@ impl TreeUtils {
         let Tree::Node(s5, l4, l5) = *n4  else {panic!()};
         let Tree::Node(s6, l6, l7) = *n5  else {panic!()};
 
-        let splitters = [s0, s1, s2, s3, s4, s5, s6];
+        let _splitters = [s0, s1, s2, s3, s4, s5, s6];
 
-        let mut leafs: Vec<(u8, u8)> = vec![];
+        let mut _leafs: Vec<(u8, u8)> = vec![];
 
         let leavs = [*l0, *l1, *l2, *l3, *l4, *l5, *l6, *l7];
         let mut leavs: Vec<(u8, u8)> = leavs.into_iter().enumerate().map(|(leaf_index, leaf)| {
@@ -251,7 +251,7 @@ impl TreeUtils {
             points.into_iter().map(|(_point, id)| (id, leaf_index as u8)).collect::<Vec<(u8, u8)>>()
         }).flatten().collect();
         leavs.sort_by(|a, b| a.0.cmp(&b.0)); // sort by id
-        let leaf_indexis: Vec<u8> = leavs.into_iter().map(|(_, leaf_index)| leaf_index).collect();
+        let _leaf_indexis: Vec<u8> = leavs.into_iter().map(|(_, leaf_index)| leaf_index).collect();
 
         todo!()
     }
@@ -263,7 +263,7 @@ impl TreeUtils {
 
     fn rec_build(&mut self, points: Vec<(&Point, u8)>, depth: usize) -> Tree {
 
-        let mut rng = thread_rng();
+        let mut _rng = thread_rng();
 
         // if points.len() <= 2 {
         if depth == 1 {
@@ -688,14 +688,14 @@ fn main() -> Result<()> {
             }).collect();
 
 
-            let a: Vec<(Vec<u8>, Vec<u8>)> = (0..graph_metadata.num_vectors).into_iter().map(|index| {
+            let _a: Vec<(Vec<u8>, Vec<u8>)> = (0..graph_metadata.num_vectors).into_iter().map(|index| {
                 let (vectors, edges) = unordered_graph_on_storage.read_node(&(index as u32)).unwrap();
-                let point = Point::from_f32_vec(vectors);
+                let _point = Point::from_f32_vec(vectors);
                 let edge_points: Vec<Point> = edges.iter().map(|edge_i| {
                     Point::from_f32_vec(unordered_graph_on_storage.read_node(edge_i).unwrap().0)
                 }).collect();
 
-                let trees: Vec<(Tree, TreeUtils)> = (0..num_tree).map(|iter_count| {
+                let _trees: Vec<(Tree, TreeUtils)> = (0..num_tree).map(|iter_count| {
                     let mut tree_utils: TreeUtils = TreeUtils::new(random_splitter_list[iter_count].clone(), 4);
                     let tree = tree_utils.build(edge_points.clone());
                     (tree, tree_utils)
@@ -707,7 +707,7 @@ fn main() -> Result<()> {
 
 
             // wip random_splitter_listの保存
-            let random_splitter_list: Vec<Vec<(Vec<f32>, Vec<f32>)>> = random_splitter_list.into_iter().map(|random_splitter| {
+            let _random_splitter_list: Vec<Vec<(Vec<f32>, Vec<f32>)>> = random_splitter_list.into_iter().map(|random_splitter| {
                 random_splitter.into_iter().map(|(p1, p2)| (p1.to_f32_vec(), p2.to_f32_vec())).collect()
             }).collect();
 
@@ -955,7 +955,7 @@ fn main() -> Result<()> {
         } => {
             let graph_metadata = GraphMetadata::load(&graph_metadata_path).unwrap();
             let pq = PQ::load(&pq_table_path)?;
-            let pq_point_table: [[Point; 256]; 4] = pq
+            let _pq_point_table: [[Point; 256]; 4] = pq
                 .cluster_table
                 .into_iter()
                 .map(|vectors| {
@@ -1001,7 +1001,7 @@ fn main() -> Result<()> {
             let mut total_waste_count = 0;
             let mut total_get_count = 0;
 
-            let mut rng = SmallRng::seed_from_u64(rand::random());
+            let mut _rng = SmallRng::seed_from_u64(rand::random());
 
             // let mut scores = vec![0 as u32; graph_metadata.num_vectors];
 
@@ -1326,6 +1326,7 @@ fn main() -> Result<()> {
             max_chunk_giga_byte_size,
             dataset_size_million,
         } => {
+            let _ = max_chunk_giga_byte_size;
             let max_chunk_giga_byte_size = 4;
             let mut original_vector_reader =
                 OriginalVectorReader::new_with(&original_vector_path, dataset_size_million)?;
@@ -1417,7 +1418,7 @@ fn main() -> Result<()> {
                     let mut original_order: Vec<(usize, f32)> = test_indexies
                         .iter()
                         .enumerate()
-                        .map(|((order_i, vec_index))| {
+                        .map(|(order_i, vec_index)| {
                             (
                                 order_i,
                                 Point::from_f32_vec(
