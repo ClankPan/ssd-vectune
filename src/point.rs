@@ -7,12 +7,14 @@ use vectune::PointInterface;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Point(Vec<f32>);
 impl Point {
-    pub fn to_f32_vec(&self) -> Vec<f32> {
-        self.0.to_vec()
-    }
-    pub fn from_f32_vec(a: Vec<f32>) -> Self {
-        Point(a.into_iter().collect())
-    }
+    // fn to_f32_vec(&self) -> Vec<f32> {
+    //     self.0.to_vec()
+    // }
+    // fn from_f32_vec(a: Vec<f32>) -> Self {
+    //     Point(a.into_iter().collect())
+    // }
+
+    pub const DIM: usize = 96;
 }
 
 impl PointInterface for Point {
@@ -86,4 +88,39 @@ impl PointInterface for Point {
     fn zero() -> Self {
         Point::from_f32_vec(vec![0.0; Point::dim() as usize])
     }
+
+    fn to_f32_vec(&self) -> Vec<f32> {
+        self.0.iter().copied().collect()
+    }
+    fn from_f32_vec(a: Vec<f32>) -> Self {
+        Point(a.into_iter().collect())
+    }
 }
+
+// fn dot_product(vec1: &Point, vec2: &Point) -> f32 {
+//     let mut result = 0.0;
+//     for i in 0..Point::DIM {
+//         result += vec1.0[i] * vec2.0[i];
+//     }
+//     result
+// }
+
+// fn norm(vec: &Point) -> f32 {
+//     let mut result = 0.0;
+//     for i in 0..Point::DIM {
+//         result += vec.0[i] * vec.0[i];
+//     }
+//     result.sqrt()
+// }
+
+// fn cosine_similarity(vec1: &Point, vec2: &Point) -> f32 {
+//     let dot = dot_product(vec1, vec2);
+//     let norm1 = norm(vec1);
+//     let norm2 = norm(vec2);
+
+//     if norm1 == 0.0 || norm2 == 0.0 {
+//         return 0.0;
+//     }
+
+//     dot / (norm1 * norm2)
+// }

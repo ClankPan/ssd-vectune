@@ -135,3 +135,49 @@ impl<T: bytemuck::Pod> OriginalVectorReaderTrait<T> for OriginalVectorReader<T> 
         self.vector_dim
     }
 }
+
+
+
+use byteorder::{LittleEndian, ReadBytesExt};
+
+pub fn read_ivecs(file_path: &str) -> std::io::Result<Vec<Vec<u32>>> {
+    let file = File::open(file_path)?;
+    let mut reader = BufReader::new(file);
+    let mut vectors = Vec::new();
+
+    while let Ok(dim) = reader.read_i32::<LittleEndian>() {
+        let mut vec = Vec::with_capacity(dim as usize);
+        for _ in 0..dim {
+            let val = reader.read_i32::<LittleEndian>()?;
+            vec.push(val);
+        }
+        vectors.push(vec);
+    }
+
+    Ok(vectors
+        .into_iter()
+        .map(|gt| gt.into_iter().map(|g| g as u32).collect())
+        .collect())
+}
+
+fn _read_ibin(file_path: &str) -> Result<Vec<Vec<f32>>> {
+    let data = std::fs::read(file_path)?;
+
+    let num_vectors = u32::from_le_bytes(data[0..4].try_into()?) as usize;
+    let vector_dim = u32::from_le_bytes(data[4..8].try_into()?) as usize;
+    let start_offset = 8;
+    let vector_byte_size = vector_dim * 4;
+
+    let vectors: Vec<Vec<f32>> = (0..num_vectors)
+        .into_iter()
+        .map(|i| {
+            let offset = start_offset + vector_byte_size * i;
+
+            let vector: &[f32] =
+                bytemuck::try_cast_slice(&data[offset..offset + vector_byte_size]).unwrap();
+            vector.to_vec()
+        })
+        .collect();
+
+    Ok(vectors)
+}

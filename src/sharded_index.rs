@@ -19,6 +19,7 @@ use rand::SeedableRng;
 use rayon::iter::IntoParallelIterator;
 // use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use vectune::PointInterface;
 use std::thread;
 
 fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
@@ -52,7 +53,7 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
 
                 if check_node_written.get(node_id).unwrap() {
                     // 元のedgesだけ復号して、追加する
-                    edges.extend(graph_on_storage.read_edges(&node_id).unwrap());
+                    edges.extend(graph_on_storage.read_edges(&(node_id as u32)).unwrap());
                     edges.sort();
                     edges.dedup();
                 }
@@ -68,7 +69,7 @@ fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
                 }
 
                 graph_on_storage
-                    .write_node(&node_id, &point.to_f32_vec(), &edges)
+                    .write_node(&(node_id as u32), &point.to_f32_vec(), &edges)
                     .unwrap();
 
                 let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);

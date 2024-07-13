@@ -20,12 +20,14 @@ rand = { version = "0.8", features = ["small_rng"] }
 rayon = "1.10.0"
 serde = { version = "1.0", features = ["derive"] }
 # vectune = {version = "0.1.1", features = []}
-vectune = {git = "https://github.com/ClankPan/Vectune", rev = "90c24b3f2ebfc4de608729bbedd06b72352d1e56", features = ["progress-bar"]}
-# vectune = {path = "../vectune", features = ["progress-bar"]}
+# vectune = {git = "https://github.com/ClankPan/Vectune", rev = "90c24b3f2ebfc4de608729bbedd06b72352d1e56", features = ["progress-bar"]}
+vectune = {path = "../vectune", features = ["progress-bar"]}
 serde_json = "1.0"
 parking_lot = "0.12.1"
 rustc-hash = "1.1.0"
 byteorder = "1.5.0"
+kd-tree = "0.6.0"
+ndarray = "0.15.6"
 
 [features]
 simd = []

@@ -31,14 +31,14 @@ impl<S> StorageTrait for Cache<S>
 where
     S: StorageTrait,
 {
-    fn read(&self, offset: usize, dst: &mut [u8]) {
-        let sector_index = offset / self.sector_byte_size;
-        let offset_in_sector = offset % self.sector_byte_size;
+    fn read(&self, offset: u64, dst: &mut [u8]) {
+        let sector_index = offset / self.sector_byte_size as u64;
+        let offset_in_sector = offset % self.sector_byte_size as u64;
 
         let mut cache_table = self.cache_table.borrow_mut();
         let mut cache = self.cache.borrow_mut();
 
-        let sector = if cache_table[sector_index].0 == usize::MAX {
+        let sector = if cache_table[sector_index as usize].0 == usize::MAX {
             println!("miss");
             // Eviction
             let cache_index = cache_table

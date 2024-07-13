@@ -4,8 +4,8 @@ use std::{fs::OpenOptions, sync::Arc};
 
 /* types */
 pub trait StorageTrait {
-    fn read(&self, offset: usize, dst: &mut [u8]);
-    fn write(&self, offset: usize, src: &[u8]);
+    fn read(&self, offset: u64, dst: &mut [u8]);
+    fn write(&self, offset: u64, src: &[u8]);
     fn sector_byte_size(&self) -> usize;
 
     // todo grow file size
@@ -51,16 +51,16 @@ impl Storage {
 }
 
 impl StorageTrait for Storage {
-    fn read(&self, offset: usize, dst: &mut [u8]) {
-        dst.copy_from_slice(&self.mmap_arc[offset..offset + dst.len()])
+    fn read(&self, offset: u64, dst: &mut [u8]) {
+        dst.copy_from_slice(&self.mmap_arc[offset as usize..offset as usize + dst.len()])
     }
 
-    fn write(&self, offset: usize, src: &[u8]) {
-        assert!(offset + src.len() <= self.mmap_arc.len());
+    fn write(&self, offset: u64, src: &[u8]) {
+        assert!(offset as usize + src.len() <= self.mmap_arc.len());
 
         let mmap_ref = Arc::clone(&self.mmap_arc);
         unsafe {
-            let dest = mmap_ref.as_ptr().add(offset) as *mut u8;
+            let dest = mmap_ref.as_ptr().add(offset as usize) as *mut u8;
             std::ptr::copy_nonoverlapping(src.as_ptr(), dest, src.len());
         }
     }

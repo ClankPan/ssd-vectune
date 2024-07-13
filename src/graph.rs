@@ -1,4 +1,9 @@
-use vectune::GraphInterface;
+use std::fs::File;
+use std::io::{Read, Write};
+use anyhow::Result;
+
+use serde::{Deserialize, Serialize};
+use vectune::{GraphInterface, PointInterface};
 
 use crate::graph_store::GraphStore;
 use crate::point::Point;
@@ -64,7 +69,7 @@ impl<S: StorageTrait> GraphInterface<Point> for Graph<S> {
 
     fn get(&mut self, node_index: &u32) -> (Point, Vec<u32>) {
         let store_index = self.node_index_to_store_index[*node_index as usize];
-        let (vector, edges) = self.graph_store.read_node(&(store_index as usize)).unwrap();
+        let (vector, edges) = self.graph_store.read_node(&store_index).unwrap();
 
         (Point::from_f32_vec(vector), edges)
     }
@@ -121,8 +126,8 @@ impl<S: StorageTrait> UnorderedGraph<S> {
     }
 }
 
-impl<S: StorageTrait> GraphInterface<Point> for UnorderedGraph<S> {
-    fn alloc(&mut self, _point: Point) -> u32 {
+impl<S: StorageTrait, P: PointInterface> GraphInterface<P> for UnorderedGraph<S> {
+    fn alloc(&mut self, _point: P) -> u32 {
         todo!()
     }
 
@@ -142,14 +147,14 @@ impl<S: StorageTrait> GraphInterface<Point> for UnorderedGraph<S> {
         todo!()
     }
 
-    fn get(&mut self, node_index: &u32) -> (Point, Vec<u32>) {
+    fn get(&mut self, node_index: &u32) -> (P, Vec<u32>) {
         let store_index = node_index;
         let (vector, edges) = self
             .graph_store
-            .read_node(&(*store_index as usize))
+            .read_node(&store_index)
             .unwrap();
 
-        (Point::from_f32_vec(vector), edges)
+        (P::from_f32_vec(vector), edges)
     }
 
     fn size_l(&self) -> usize {
@@ -170,5 +175,83 @@ impl<S: StorageTrait> GraphInterface<Point> for UnorderedGraph<S> {
 
     fn overwirte_out_edges(&mut self, _id: &u32, _edges: Vec<u32>) {
         todo!()
+    }
+}
+
+
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GraphMetadata {
+    pub node_index_to_store_index: Vec<u32>,
+    pub medoid_node_index: u32,
+    pub sector_byte_size: usize,
+    pub num_vectors: usize,
+    pub vector_dim: usize,
+    pub edge_degrees: usize,
+}
+
+impl GraphMetadata {
+    pub fn new(
+        node_index_to_store_index: Vec<u32>,
+        medoid_node_index: u32,
+        sector_byte_size: usize,
+        num_vectors: usize,
+        vector_dim: usize,
+        edge_degrees: usize,
+    ) -> Self {
+        Self {
+            node_index_to_store_index,
+            medoid_node_index,
+            sector_byte_size,
+            num_vectors,
+            vector_dim,
+            edge_degrees,
+        }
+    }
+
+    pub fn load(path: &str) -> Result<Self> {
+        let mut file = File::open(path).expect("file not found");
+
+        // ファイルの内容を読み込む
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)
+            .expect("something went wrong reading the file");
+
+        // JSONデータをPerson構造体にデシリアライズ
+        let metadata: Self = serde_json::from_str(&contents)?;
+        Ok(metadata)
+    }
+
+    pub fn save(&self, path: &str) -> Result<()> {
+        let json_string = serde_json::to_string(self)?;
+        let mut file = File::create(path)?;
+        file.write_all(json_string.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn load_debug(path: &str, sector_byte_size: usize) -> Result<Self> {
+        let mut file = File::open(path).expect("file not found");
+
+        // ファイルの内容を読み込む
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)
+            .expect("something went wrong reading the file");
+
+        // JSONデータをPerson構造体にデシリアライズ
+        let (node_index_to_store_index, medoid_node_index): (Vec<u32>, u32) =
+            serde_json::from_str(&contents)?;
+        let metadata = Self {
+            node_index_to_store_index,
+            medoid_node_index,
+            sector_byte_size,
+            num_vectors: 100 * 1000000,
+            vector_dim: 96,
+            edge_degrees: 70 * 2,
+        };
+
+        metadata.save(&format!("{path}.debug"))?;
+
+        Ok(metadata)
     }
 }

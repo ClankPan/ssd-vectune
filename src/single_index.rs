@@ -6,6 +6,7 @@ use indicatif::ProgressBar;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
+use vectune::PointInterface;
 
 pub fn single_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     vector_reader: &R,
@@ -32,7 +33,7 @@ pub fn single_index<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
         .enumerate()
         .for_each(|(node_id, (point, edges))| {
             graph_on_storage
-                .write_node(&node_id, &point.to_f32_vec(), &edges)
+                .write_node(&(node_id as u32), &point.to_f32_vec(), &edges)
                 .unwrap();
         });
 }

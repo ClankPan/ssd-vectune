@@ -3,8 +3,8 @@ use crate::utils;
 
 use anyhow::Result;
 
-type StoreIndex = usize;
-type SectorIndex = usize;
+type StoreIndex = u32;
+type SectorIndex = u32;
 
 #[derive(Clone)]
 pub struct GraphStore<S: StorageTrait> {
@@ -39,12 +39,12 @@ where
         }
     }
 
-    fn offset_from_store_index(&self, store_index: &StoreIndex) -> usize {
-        store_index * self.node_byte_size
+    fn offset_from_store_index(&self, store_index: &StoreIndex) -> u64 {
+        *store_index as u64 * self.node_byte_size as u64
     }
 
-    fn offset_from_sector_index(&self, sector_index: &SectorIndex) -> usize {
-        sector_index * self.storage.sector_byte_size()
+    fn offset_from_sector_index(&self, sector_index: &SectorIndex) -> u64 {
+        *sector_index as u64 * self.storage.sector_byte_size() as u64
     }
 
     pub fn read_serialized_node(&self, store_index: &StoreIndex) -> Vec<u8> {
@@ -150,7 +150,7 @@ impl<'a, S: StorageTrait> Iterator for EdgesIterator<'a, S> {
             self.current_position = 0;
             self.index += 1;
 
-            if self.index >= self.graph.num_vectors() {
+            if self.index >= self.graph.num_vectors() as u32 {
                 return None;
             } else {
                 match self.graph.read_edges(&self.index) {
