@@ -1008,6 +1008,7 @@ fn main() -> Result<()> {
             // let pq_num_divs = 16;
             // let pq_num_divs = 3;
 
+
             let hit = (0..query_iter)
                 .into_iter()
                 .map(|query_index| {
@@ -1025,22 +1026,23 @@ fn main() -> Result<()> {
                     //         5,
                     //         size_l,
                     //     );
-                    let (get_count, waste_count) = (0, 0);
-                    let (k_ann, visited) =
-                        vectune::search(
+                    // let (get_count, waste_count) = (0, 0);
+                    let ((k_ann, visited), (get_count, waste_count)) =
+                        vectune::search_with_optimal_stopping(
                             &mut graph,
                             &Point::from_f32_vec(query_vector),
-                            5,
+                            5
                         );
                     let t = start.elapsed().as_millis();
                     println!("{t} milli sec, visited len: {}", visited.len());
+                    let waste_rate = if waste_count == 0 {
+                        0.0
+                    } else {
+                        (waste_count as f32 / get_count as f32) * 100.0
+                    };
                     println!(
                         "waste: {}%",
-                        if waste_count == 0 {
-                            0.0
-                        } else {
-                            (waste_count as f32 / get_count as f32) * 100.0
-                        }
+                        waste_rate
                     );
                     total_time += t;
                     total_waste_count += waste_count;
