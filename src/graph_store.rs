@@ -13,7 +13,7 @@ pub struct GraphStore<S: StorageTrait> {
     // wip: これらのパラメータは、ストレージのヘッダーに書き込んだ方がいい
     num_vectors: usize,
     vector_dim: usize,
-    edge_max_digree: usize,
+    edge_max_degree: usize,
     num_node_in_sector: usize,
     num_sectors: usize,
     node_byte_size: usize,
@@ -23,8 +23,8 @@ impl<S> GraphStore<S>
 where
     S: StorageTrait,
 {
-    pub fn new(num_vectors: usize, vector_dim: usize, edge_max_digree: usize, storage: S) -> Self {
-        let node_byte_size = vector_dim * 4 + edge_max_digree * 4 + 4;
+    pub fn new(num_vectors: usize, vector_dim: usize, edge_max_degree: usize, storage: S) -> Self {
+        let node_byte_size = vector_dim * 4 + edge_max_degree * 4 + 4;
         let sector_byte_size = storage.sector_byte_size();
         let num_sectors = sector_byte_size / node_byte_size;
         let num_node_in_sector: usize = storage.sector_byte_size() / node_byte_size;
@@ -32,7 +32,7 @@ where
             storage,
             num_vectors,
             vector_dim,
-            edge_max_digree,
+            edge_max_degree,
             num_node_in_sector,
             num_sectors,
             node_byte_size,
@@ -58,7 +58,7 @@ where
         let bytes = self.read_serialized_node(store_index);
 
         let (vector, edges) =
-            utils::deserialize_node(&bytes, self.vector_dim, self.edge_max_digree);
+            utils::deserialize_node(&bytes, self.vector_dim, self.edge_max_degree);
 
         Ok((vector.to_vec(), edges.to_vec()))
     }
@@ -108,11 +108,15 @@ where
     pub fn vector_dim(&self) -> usize {
         self.vector_dim
     }
-    pub fn edge_max_digree(&self) -> usize {
-        self.edge_max_digree
+    pub fn edge_max_degree(&self) -> usize {
+        self.edge_max_degree
     }
     pub fn node_byte_size(&self) -> usize {
         self.node_byte_size
+    }
+
+    pub fn into_storage(self) -> S {
+        self.storage
     }
 }
 

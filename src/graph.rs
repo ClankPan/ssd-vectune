@@ -28,7 +28,7 @@ impl<S: StorageTrait> Graph<S> {
     ) -> Self {
         Self {
             size_l: 125,
-            size_r: graph_store.edge_max_digree(),
+            size_r: graph_store.edge_max_degree(),
             size_a: 2.0,
 
             graph_store,
@@ -109,7 +109,7 @@ impl<S: StorageTrait> UnorderedGraph<S> {
     pub fn new(graph_store: GraphStore<S>, start_node_index: u32) -> Self {
         Self {
             size_l: 125,
-            size_r: graph_store.edge_max_digree(),
+            size_r: graph_store.edge_max_degree(),
             size_a: 2.0,
 
             graph_store,

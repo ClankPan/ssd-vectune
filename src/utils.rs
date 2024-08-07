@@ -62,3 +62,8 @@ pub fn deserialize_edges(serialize_edges: &SerializedEdges) -> &Edges {
 
     edges
 }
+
+pub fn node_byte_size(vector_dim: usize) -> usize {
+    let node_byte_size = vector_dim * 4 + 140 * 4 + 4;
+    node_byte_size
+}

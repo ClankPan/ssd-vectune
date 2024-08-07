@@ -375,7 +375,7 @@ fn main() -> Result<()> {
 
             /* sharding */
             println!("initializing graph");
-            let node_byte_size = (vector_reader.get_vector_dim() * 4 + 140 * 4 + 4) as usize;
+            let node_byte_size = utils::node_byte_size(vector_reader.get_vector_dim());
             let file_byte_size = vector_reader.get_num_vectors() * node_byte_size;
             // let file_byte_size = 11 * 1000000 * node_byte_size;
             let num_node_in_sector = max_sector_byte_size / node_byte_size;
@@ -995,7 +995,7 @@ fn main() -> Result<()> {
             let groundtruth: Vec<Vec<u32>> = read_ivecs(&ground_truth_path).unwrap();
 
             // let query_iter = query_vector_reader.get_num_vectors();
-            let query_iter = 100;
+            let query_iter = 30;
 
             let mut total_time = 0;
             let mut total_waste_count = 0;
@@ -1007,6 +1007,8 @@ fn main() -> Result<()> {
 
             // let pq_num_divs = 16;
             // let pq_num_divs = 3;
+
+            let k = 1;
 
 
             let hit = (0..query_iter)
@@ -1027,12 +1029,25 @@ fn main() -> Result<()> {
                     //         size_l,
                     //     );
                     // let (get_count, waste_count) = (0, 0);
+
+
+                    // let ((k_ann, visited), (get_count, waste_count)) =
+                    //     vectune::search_with_kann(
+                    //         &mut graph,
+                    //         &Point::from_f32_vec(query_vector),
+                    //         5
+                    //     );
+
                     let ((k_ann, visited), (get_count, waste_count)) =
                         vectune::search_with_optimal_stopping(
                             &mut graph,
                             &Point::from_f32_vec(query_vector),
-                            5
+                            k,
+                            &mut rng
                         );
+                        
+
+                        
                     let t = start.elapsed().as_millis();
                     println!("{t} milli sec, visited len: {}", visited.len());
                     let waste_rate = if waste_count == 0 {
@@ -1048,17 +1063,17 @@ fn main() -> Result<()> {
                     total_waste_count += waste_count;
                     total_get_count += get_count;
 
-                    let result_top_5: Vec<u32> = k_ann.into_iter().map(|(_, i)| i).collect();
-                    let top5_groundtruth = &groundtruth[query_index][0..5];
-                    println!("{:?}\n{:?}\n\n", top5_groundtruth, result_top_5);
+                    let result_top_k: Vec<u32> = k_ann.into_iter().map(|(_, i)| i).collect();
+                    let topk_groundtruth = &groundtruth[query_index][0..k];
+                    println!("{:?}\n{:?}\n\n", topk_groundtruth, result_top_k);
                     let mut hit = 0;
-                    for res in result_top_5 {
-                        if top5_groundtruth.contains(&res) {
+                    for res in result_top_k {
+                        if topk_groundtruth.contains(&res) {
                             hit += 1;
                         }
                     }
 
-                    println!("{hit}/5");
+                    println!("{hit}/{k}");
 
                     // visited
                     //     .into_iter()
@@ -1069,7 +1084,7 @@ fn main() -> Result<()> {
                 .reduce(|acc, x| acc + x)
                 .unwrap();
 
-            println!("5-recall-rate@5: {}", hit as f32 / (5 * query_iter) as f32);
+            println!("5-recall-rate@5: {}", hit as f32 / (k * query_iter) as f32);
             println!("average search time: {}", total_time / query_iter as u128);
             println!(
                 "total waste: {}%",
@@ -1079,6 +1094,7 @@ fn main() -> Result<()> {
                     (total_waste_count as f32 / total_get_count as f32) * 100.0
                 }
             );
+            println!("average get_count: {}", total_get_count as f32 / query_iter as f32);
 
             // let mut scores: Vec<_> = scores.into_iter().enumerate().collect();
             // scores.sort_by(|a, b| b.1.cmp(&a.1));
