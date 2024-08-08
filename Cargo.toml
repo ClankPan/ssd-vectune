@@ -32,4 +32,4 @@ ndarray = "0.15.6"
 [features]
 simd = []
 size = []
-wasm_bindgen = ["parking_lot/wasm-bindgen", "vectune/wasm-bindgen"]
+wasm-bindgen = ["parking_lot/wasm-bindgen", "vectune/wasm-bindgen"]
