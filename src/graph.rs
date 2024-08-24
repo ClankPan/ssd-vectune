@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::fs::File;
 use std::io::{Read, Write};
-use anyhow::Result;
 
 use serde::{Deserialize, Serialize};
 use vectune::{GraphInterface, PointInterface};
@@ -10,7 +10,7 @@ use crate::point::Point;
 use crate::storage::StorageTrait;
 
 #[derive(Clone)]
-pub struct Graph<S: StorageTrait> {
+pub struct SectoredGraph<S: StorageTrait> {
     size_l: usize,
     size_r: usize,
     size_a: f32,
@@ -20,7 +20,7 @@ pub struct Graph<S: StorageTrait> {
     start_node_index: u32,
 }
 
-impl<S: StorageTrait> Graph<S> {
+impl<S: StorageTrait> SectoredGraph<S> {
     pub fn new(
         graph_store: GraphStore<S>,
         node_index_to_store_index: Vec<u32>,
@@ -28,7 +28,7 @@ impl<S: StorageTrait> Graph<S> {
     ) -> Self {
         Self {
             size_l: 125,
-            size_r: graph_store.edge_max_degree(),
+            size_r: graph_store.max_edge_degrees(),
             size_a: 2.0,
 
             graph_store,
@@ -46,7 +46,7 @@ impl<S: StorageTrait> Graph<S> {
     }
 }
 
-impl<S: StorageTrait> GraphInterface<Point> for Graph<S> {
+impl<S: StorageTrait> GraphInterface<Point> for SectoredGraph<S> {
     fn alloc(&mut self, _point: Point) -> u32 {
         todo!()
     }
@@ -96,7 +96,7 @@ impl<S: StorageTrait> GraphInterface<Point> for Graph<S> {
 }
 
 #[derive(Clone)]
-pub struct UnorderedGraph<S: StorageTrait> {
+pub struct Graph<S: StorageTrait> {
     size_l: usize,
     size_r: usize,
     size_a: f32,
@@ -105,15 +105,14 @@ pub struct UnorderedGraph<S: StorageTrait> {
     start_node_index: u32,
 }
 
-impl<S: StorageTrait> UnorderedGraph<S> {
-    pub fn new(graph_store: GraphStore<S>, start_node_index: u32) -> Self {
+impl<S: StorageTrait> Graph<S> {
+    pub fn new(graph_store: GraphStore<S>) -> Self {
         Self {
             size_l: 125,
-            size_r: graph_store.edge_max_degree(),
+            size_r: graph_store.max_edge_degrees(),
             size_a: 2.0,
-
+            start_node_index: graph_store.start_id() as u32,
             graph_store,
-            start_node_index,
         }
     }
 
@@ -126,7 +125,7 @@ impl<S: StorageTrait> UnorderedGraph<S> {
     }
 }
 
-impl<S: StorageTrait, P: PointInterface> GraphInterface<P> for UnorderedGraph<S> {
+impl<S: StorageTrait, P: PointInterface> GraphInterface<P> for Graph<S> {
     fn alloc(&mut self, _point: P) -> u32 {
         todo!()
     }
@@ -149,10 +148,7 @@ impl<S: StorageTrait, P: PointInterface> GraphInterface<P> for UnorderedGraph<S>
 
     fn get(&mut self, node_index: &u32) -> (P, Vec<u32>) {
         let store_index = node_index;
-        let (vector, edges) = self
-            .graph_store
-            .read_node(&store_index)
-            .unwrap();
+        let (vector, edges) = self.graph_store.read_node(&store_index).unwrap();
 
         (P::from_f32_vec(vector), edges)
     }
@@ -177,9 +173,6 @@ impl<S: StorageTrait, P: PointInterface> GraphInterface<P> for UnorderedGraph<S>
         todo!()
     }
 }
-
-
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GraphMetadata {

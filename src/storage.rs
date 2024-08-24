@@ -1,12 +1,12 @@
 use anyhow::Result;
 use memmap2::{MmapMut, MmapOptions};
-use std::{fs::OpenOptions, sync::Arc};
+use std::{fs::OpenOptions, path::Path, sync::Arc};
 
 /* types */
 pub trait StorageTrait {
     fn read(&self, offset: u64, dst: &mut [u8]);
     fn write(&self, offset: u64, src: &[u8]);
-    fn sector_byte_size(&self) -> usize;
+    // fn sector_byte_size(&self) -> usize;
 
     // todo grow file size
 }
@@ -14,14 +14,14 @@ pub trait StorageTrait {
 #[derive(Clone)]
 pub struct Storage {
     mmap_arc: Arc<MmapMut>,
-    sector_byte_size: usize,
+    // sector_byte_size: usize,
 }
 
 impl Storage {
     pub fn new_with_empty_file(
-        path: &str,
+        path: &Path,
         file_byte_size: u64,
-        sector_byte_size: usize,
+        // sector_byte_size: usize,
     ) -> Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -34,18 +34,19 @@ impl Storage {
 
         Ok(Self {
             mmap_arc: Arc::new(mmap),
-            sector_byte_size,
+            // sector_byte_size,
         })
     }
 
-    pub fn load(path: &str, sector_byte_size: usize) -> Result<Self> {
+    pub fn load(path: &str, // , sector_byte_size: usize
+    ) -> Result<Self> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
 
         let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
         println!("memmap len: {}", mmap.len());
         Ok(Self {
             mmap_arc: Arc::new(mmap),
-            sector_byte_size,
+            // sector_byte_size,
         })
     }
 }
@@ -65,24 +66,24 @@ impl StorageTrait for Storage {
         }
     }
 
-    fn sector_byte_size(&self) -> usize {
-        self.sector_byte_size
-    }
+    // fn sector_byte_size(&self) -> usize {
+    //     self.sector_byte_size
+    // }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use std::path::Path;
+
     use crate::storage::{Storage, StorageTrait};
     use bytesize::MB;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    const SECTOR_BYTES_SIZE: usize = 96 * 4 + 70 * 4 + 4;
-
     #[test]
     fn write_and_read_byte_to_storage() {
         let storage =
-            Storage::new_with_empty_file("test_vectors/test.graph", MB, SECTOR_BYTES_SIZE).unwrap();
+            Storage::new_with_empty_file(Path::new("test_vectors/test.graph"), MB).unwrap();
         let original_bytes: Vec<u8> = vec![1; 10];
         let offset = 100;
         storage.write(offset, &original_bytes);
@@ -96,7 +97,7 @@ mod tests {
     #[test]
     fn par_write_byte_to_storage() {
         let storage =
-            Storage::new_with_empty_file("test_vectors/test.graph", MB, SECTOR_BYTES_SIZE).unwrap();
+            Storage::new_with_empty_file(Path::new("test_vectors/test.graph"), MB).unwrap();
 
         (0..9).into_par_iter().for_each(|i| {
             let offset = i * 10;

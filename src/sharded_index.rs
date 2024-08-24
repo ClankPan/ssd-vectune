@@ -19,8 +19,8 @@ use rand::SeedableRng;
 use rayon::iter::IntoParallelIterator;
 // use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use vectune::PointInterface;
 use std::thread;
+use vectune::PointInterface;
 
 fn store_and_load<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>(
     prev_result: Option<(Vec<(Point, Vec<u32>)>, Vec<VectorIndex>)>,

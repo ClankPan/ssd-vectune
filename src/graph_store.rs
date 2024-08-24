@@ -4,52 +4,77 @@ use crate::utils;
 use anyhow::Result;
 
 type StoreIndex = u32;
-type SectorIndex = u32;
+// type SectorIndex = u32;
 
 #[derive(Clone)]
 pub struct GraphStore<S: StorageTrait> {
     storage: S,
+    // // wip: これらのパラメータは、ストレージのヘッダーに書き込んだ方がいい
+    // num_vectors: usize,
+    // vector_dim: usize,
+    // max_edge_degrees: usize,
+    // node_byte_size: usize,
+}
 
-    // wip: これらのパラメータは、ストレージのヘッダーに書き込んだ方がいい
-    num_vectors: usize,
-    vector_dim: usize,
-    edge_max_degree: usize,
-    num_node_in_sector: usize,
-    num_sectors: usize,
-    node_byte_size: usize,
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub struct GraphHeader {
+    start_id: u32,
+    num_vectors: u32,
+    vector_dim: u32,
+    max_edge_degrees: u32,
+    node_byte_size: u32,
 }
 
 impl<S> GraphStore<S>
 where
     S: StorageTrait,
 {
-    pub fn new(num_vectors: usize, vector_dim: usize, edge_max_degree: usize, storage: S) -> Self {
-        let node_byte_size = vector_dim * 4 + edge_max_degree * 4 + 4;
-        let sector_byte_size = storage.sector_byte_size();
-        let num_sectors = sector_byte_size / node_byte_size;
-        let num_node_in_sector: usize = storage.sector_byte_size() / node_byte_size;
+    pub fn new(num_vectors: usize, vector_dim: usize, max_edge_degrees: usize, storage: S) -> Self {
+        let node_byte_size = utils::node_byte_size(vector_dim, max_edge_degrees);
+        let header: GraphHeader = GraphHeader {
+            start_id: 0,
+            num_vectors: num_vectors as u32,
+            vector_dim: vector_dim as u32,
+            max_edge_degrees: max_edge_degrees as u32,
+            node_byte_size: node_byte_size as u32,
+        };
+
+        let header_bytes = bincode::serialize(&header).unwrap();
+        storage.write(0, &header_bytes);
+
         Self {
             storage,
-            num_vectors,
-            vector_dim,
-            edge_max_degree,
-            num_node_in_sector,
-            num_sectors,
-            node_byte_size,
+            // num_vectors,
+            // vector_dim,
+            // max_edge_degrees,
+            // node_byte_size,
         }
     }
 
-    fn offset_from_store_index(&self, store_index: &StoreIndex) -> u64 {
-        *store_index as u64 * self.node_byte_size as u64
+    pub fn load(storage: S) -> Self {
+        Self {
+            storage,
+            // num_vectors: header.num_vectors as usize,
+            // vector_dim: header.vector_dim as usize,
+            // max_edge_degrees: header.max_edge_degrees as usize,
+            // node_byte_size: header.node_byte_size as usize,
+        }
     }
 
-    fn offset_from_sector_index(&self, sector_index: &SectorIndex) -> u64 {
-        *sector_index as u64 * self.storage.sector_byte_size() as u64
+    pub fn set_start_id(&self, start_id: u32) {
+        let mut header: GraphHeader = self.read_header();
+        header.start_id = start_id;
+        self.write_header(header);
+    }
+
+    fn offset_from_store_index(&self, store_index: &StoreIndex) -> u64 {
+        std::mem::size_of::<GraphHeader>() as u64
+            + *store_index as u64 * self.node_byte_size() as u64
     }
 
     pub fn read_serialized_node(&self, store_index: &StoreIndex) -> Vec<u8> {
         let offset = self.offset_from_store_index(store_index);
-        let mut bytes: Vec<u8> = vec![0; self.node_byte_size];
+        let mut bytes: Vec<u8> = vec![0; self.node_byte_size()];
         self.storage.read(offset, &mut bytes);
         bytes
     }
@@ -58,7 +83,7 @@ where
         let bytes = self.read_serialized_node(store_index);
 
         let (vector, edges) =
-            utils::deserialize_node(&bytes, self.vector_dim, self.edge_max_degree);
+            utils::deserialize_node(&bytes, self.vector_dim(), self.max_edge_degrees());
 
         Ok((vector.to_vec(), edges.to_vec()))
     }
@@ -80,41 +105,33 @@ where
         Ok(())
     }
 
-    pub fn write_serialized_sector(&self, sector_index: &StoreIndex, bytes: &[u8]) -> Result<()> {
-        let offset = self.offset_from_sector_index(sector_index);
-        self.storage.write(offset, bytes);
-        Ok(())
+    fn read_header(&self) -> GraphHeader {
+        let mut bytes = vec![0u8; std::mem::size_of::<GraphHeader>()];
+        self.storage.read(0, &mut bytes);
+        let header: GraphHeader = bincode::deserialize(&bytes).unwrap();
+        header
     }
 
-    // fn store_index_to_sector_index_and_offset(
-    //     &self,
-    //     store_index: &StoreIndex,
-    // ) -> (SectorIndex, usize) {
-    //     // アライメントがずれている場合、
-    //     let sector_index = *store_index / self.num_node_in_sector;
-    //     let offset = (*store_index as usize % self.num_node_in_sector) * self.node_byte_size;
-    //     (sector_index, offset)
-    // }
+    fn write_header(&self, header: GraphHeader) {
+        let header_bytes = bincode::serialize(&header).unwrap();
+        self.storage.write(0, &header_bytes);
+    }
 
     pub fn num_vectors(&self) -> usize {
-        self.num_vectors
-    }
-    pub fn num_node_in_sector(&self) -> usize {
-        self.num_node_in_sector
-    }
-    pub fn num_sectors(&self) -> usize {
-        self.num_sectors
+        self.read_header().num_vectors as usize
     }
     pub fn vector_dim(&self) -> usize {
-        self.vector_dim
+        self.read_header().vector_dim as usize
     }
-    pub fn edge_max_degree(&self) -> usize {
-        self.edge_max_degree
+    pub fn max_edge_degrees(&self) -> usize {
+        self.read_header().max_edge_degrees as usize
     }
     pub fn node_byte_size(&self) -> usize {
-        self.node_byte_size
+        self.read_header().node_byte_size as usize
     }
-
+    pub fn start_id(&self) -> usize {
+        self.read_header().start_id as usize
+    }
     pub fn into_storage(self) -> S {
         self.storage
     }
@@ -182,17 +199,19 @@ impl<'a, S: StorageTrait> Iterator for EdgesIterator<'a, S> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use bytesize::MB;
 
     use crate::storage::Storage;
 
     use super::GraphStore;
-    const SECTOR_BYTES_SIZE: usize = 96 * 4 + 70 * 4 + 4;
+    // const SECTOR_BYTES_SIZE: usize = 96 * 4 + 70 * 4 + 4;
 
     #[test]
     fn write_and_read_node() {
         let storage =
-            Storage::new_with_empty_file("test_vectors/test.graph", MB, SECTOR_BYTES_SIZE).unwrap();
+            Storage::new_with_empty_file(Path::new("test_vectors/test.graph"), MB).unwrap();
         let graph_on_stroage = GraphStore::new(100, 96, 70 * 2, storage);
 
         graph_on_stroage

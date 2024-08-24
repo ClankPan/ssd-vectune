@@ -1,4 +1,4 @@
-use crate::point::Point;
+// use crate::point::Point;
 use anyhow::anyhow;
 use anyhow::Result;
 use memmap2::Mmap;
@@ -8,7 +8,7 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::marker::PhantomData;
-use vectune::PointInterface;
+// use vectune::PointInterface;
 
 type VectorIndex = usize;
 
@@ -61,7 +61,7 @@ impl<T> OriginalVectorReader<T> {
         let start_offset = 8;
         let buf_reader: BufReader<File> = BufReader::new(file);
 
-        assert_eq!(vector_dim, Point::dim() as usize);
+        // assert_eq!(vector_dim, Point::dim() as usize);
 
         Ok(Self {
             mmap,
@@ -135,8 +135,6 @@ impl<T: bytemuck::Pod> OriginalVectorReaderTrait<T> for OriginalVectorReader<T> 
         self.vector_dim
     }
 }
-
-
 
 use byteorder::{LittleEndian, ReadBytesExt};
 

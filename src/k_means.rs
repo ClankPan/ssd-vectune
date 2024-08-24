@@ -30,9 +30,9 @@ pub fn on_disk_k_means_pq<R: OriginalVectorReaderTrait<f32> + std::marker::Sync>
     max_chunk_giga_byte_size: u64,
     rng: &mut SmallRng,
 ) -> (Vec<[ClusterLabel; 4]>, [[ClusterPoint; NUM_CLUSTERS]; 4]) {
-    assert!(Point::dim() % 4 == 0);
+    assert!(vector_reader.get_vector_dim() % 4 == 0);
 
-    let sub_dim = Point::dim() as usize / 4;
+    let sub_dim = vector_reader.get_vector_dim() as usize / 4;
 
     println!(
         "max_chunk_giga_byte_size: {} GiB ({} Byte)",

@@ -1,2 +1,6 @@
 /target
 /test_vectors
+
+/models/config.json
+/models/model.safetensors
+/models/tokenizer.json

@@ -6,19 +6,13 @@ use vectune::PointInterface;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Point(Vec<f32>);
-impl Point {
-    // fn to_f32_vec(&self) -> Vec<f32> {
-    //     self.0.to_vec()
-    // }
-    // fn from_f32_vec(a: Vec<f32>) -> Self {
-    //     Point(a.into_iter().collect())
-    // }
-
-    pub const DIM: usize = 96;
-}
+// impl <const DIM: usize> Point<DIM> {
+//     pub const DIM: usize = 96;
+// }
 
 impl PointInterface for Point {
-    #[cfg(not(feature = "simd"))]
+    #[cfg(not(feature = "simd-l2"))]
+    #[cfg(not(feature = "cos-sim"))]
     fn distance(&self, other: &Self) -> f32 {
         self.0
             .iter()
@@ -30,8 +24,13 @@ impl PointInterface for Point {
             .sum::<f32>()
             .sqrt()
     }
+    #[cfg(not(feature = "simd-l2"))]
+    #[cfg(feature = "cos-sim")]
+    fn distance(&self, other: &Self) -> f32 {
+        -cosine_similarity(&self, &other) + 1.0
+    }
 
-    #[cfg(feature = "simd")]
+    #[cfg(feature = "simd-l2")]
     fn distance(&self, other: &Self) -> f32 {
         assert_eq!(self.0.len(), other.0.len());
 
@@ -63,9 +62,9 @@ impl PointInterface for Point {
         (simd_sum + remainder_sum).sqrt()
     }
 
-    fn dim() -> u32 {
-        96
-    }
+    // fn dim() -> u32 {
+    //     96
+    // }
 
     fn add(&self, other: &Self) -> Self {
         Point::from_f32_vec(
@@ -85,9 +84,9 @@ impl PointInterface for Point {
         )
     }
 
-    fn zero() -> Self {
-        Point::from_f32_vec(vec![0.0; Point::dim() as usize])
-    }
+    // fn zero() -> Self {
+    //     Point::from_f32_vec(vec![0.0; DIM])
+    // }
 
     fn to_f32_vec(&self) -> Vec<f32> {
         self.0.iter().copied().collect()
@@ -97,30 +96,36 @@ impl PointInterface for Point {
     }
 }
 
-// fn dot_product(vec1: &Point, vec2: &Point) -> f32 {
-//     let mut result = 0.0;
-//     for i in 0..Point::DIM {
-//         result += vec1.0[i] * vec2.0[i];
-//     }
-//     result
-// }
+#[cfg(not(feature = "simd-l2"))]
+#[cfg(feature = "cos-sim")]
+fn dot_product(vec1: &Point, vec2: &Point) -> f32 {
+    let mut result = 0.0;
+    for i in 0..Point::dim() as usize {
+        result += vec1.0[i] * vec2.0[i];
+    }
+    result
+}
 
-// fn norm(vec: &Point) -> f32 {
-//     let mut result = 0.0;
-//     for i in 0..Point::DIM {
-//         result += vec.0[i] * vec.0[i];
-//     }
-//     result.sqrt()
-// }
+#[cfg(not(feature = "simd-l2"))]
+#[cfg(feature = "cos-sim")]
+fn norm(vec: &Point) -> f32 {
+    let mut result = 0.0;
+    for i in 0..Point::dim() as usize {
+        result += vec.0[i] * vec.0[i];
+    }
+    result.sqrt()
+}
 
-// fn cosine_similarity(vec1: &Point, vec2: &Point) -> f32 {
-//     let dot = dot_product(vec1, vec2);
-//     let norm1 = norm(vec1);
-//     let norm2 = norm(vec2);
+#[cfg(not(feature = "simd-l2"))]
+#[cfg(feature = "cos-sim")]
+fn cosine_similarity(vec1: &Point, vec2: &Point) -> f32 {
+    let dot = dot_product(vec1, vec2);
+    let norm1 = norm(vec1);
+    let norm2 = norm(vec2);
 
-//     if norm1 == 0.0 || norm2 == 0.0 {
-//         return 0.0;
-//     }
+    if norm1 == 0.0 || norm2 == 0.0 {
+        return 0.0;
+    }
 
-//     dot / (norm1 * norm2)
-// }
+    dot / (norm1 * norm2)
+}

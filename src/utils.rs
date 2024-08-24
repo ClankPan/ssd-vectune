@@ -1,3 +1,5 @@
+use crate::graph_store::GraphHeader;
+
 type Vector = [f32];
 type Edges = [u32];
 type SerializedVector = [u8];
@@ -63,7 +65,13 @@ pub fn deserialize_edges(serialize_edges: &SerializedEdges) -> &Edges {
     edges
 }
 
-pub fn node_byte_size(vector_dim: usize) -> usize {
-    let node_byte_size = vector_dim * 4 + 140 * 4 + 4;
+pub fn node_byte_size(vector_dim: usize, max_edge_degrees: usize) -> usize {
+    let node_byte_size = vector_dim * 4 + max_edge_degrees * 4 + 4;
     node_byte_size
 }
+
+pub fn file_byte_size(node_byte_size: usize, num_vectors: usize) -> usize {
+    std::mem::size_of::<GraphHeader>()
+    + num_vectors * node_byte_size
+}
+
