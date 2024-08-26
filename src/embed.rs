@@ -4,6 +4,8 @@ extern crate intel_mkl_src;
 #[cfg(feature = "accelerate")]
 extern crate accelerate_src;
 
+use std::{fs::File, io::Read, path::Path};
+
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config};
@@ -19,9 +21,14 @@ use anyhow::{Error as E, Result};
 // use hf_hub::{api::sync::Api, Repo, RepoType};
 // use tokenizers::{PaddingParams, Tokenizer};
 
-const WEIGHTS: &[u8] = include_bytes!("../models/model.safetensors");
-const CONFIG: &[u8] = include_bytes!("../models/config.json");
-const TOKENIZER: &[u8] = include_bytes!("../models/tokenizer.json");
+// const WEIGHTS: &[u8] = include_bytes!("../models/model.safetensors");
+// const CONFIG: &[u8] = include_bytes!("../models/config.json");
+// const TOKENIZER: &[u8] = include_bytes!("../models/tokenizer.json");
+
+// const WEIGHTS: &[u8] = include_bytes!(format!("{}/model.safetensors", env!("MODEL_DIR")));
+// const CONFIG: &[u8] = include_bytes!(env!("MODEL_PATH"));
+// const TOKENIZER: &[u8] = include_bytes!("../models/tokenizer.json");
+
 
 pub struct EmbeddingModel {
     bert: BertModel,
@@ -29,11 +36,20 @@ pub struct EmbeddingModel {
 }
 
 impl EmbeddingModel {
-    pub fn new() ->  Result<Self> {
+    pub fn new(model_dir: &Path) ->  Result<Self> {
+        let mut weights = Vec::new();
+        File::open(model_dir.join("/model.safetensors"))?.read_to_end(&mut weights)?;
+
+        let mut config = Vec::new();
+        File::open(model_dir.join("/config.json"))?.read_to_end(&mut config)?;
+
+        let mut tokenizer = Vec::new();
+        File::open(model_dir.join("/tokenizer.json"))?.read_to_end(&mut tokenizer)?;
+
         let device = &Device::Cpu;
-        let vb = VarBuilder::from_slice_safetensors(WEIGHTS, DType::F32, device)?;
-        let config: Config = serde_json::from_slice(CONFIG)?;
-        let tokenizer = Tokenizer::from_bytes(TOKENIZER).map_err(E::msg)?;
+        let vb = VarBuilder::from_slice_safetensors(&weights, DType::F32, device)?;
+        let config: Config = serde_json::from_slice(&config)?;
+        let tokenizer = Tokenizer::from_bytes(tokenizer).map_err(E::msg)?;
         let bert = BertModel::load(vb, &config)?;
     
         Ok(Self { bert, tokenizer })

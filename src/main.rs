@@ -180,7 +180,7 @@ fn main() -> Result<()> {
         // ❯ cargo run --release  -- embed-sentences --sentences-path /Users/clankpan/Develop/Kinic/auto_repository_retriever/debug/3505716682c93b8662fe472c9524243e607b0611_chunk_text_vec.json --batch-size 10 --out test_vectors/topic.fbin
         Commands::EmbedSentences { sentences_path, out , batch_size} => {
 
-            let mut model = EmbeddingModel::new()?;
+            let mut model = EmbeddingModel::new(Path::new("../models"))?;
 
             let sentences: Vec<String> = serde_json::from_str(&open_file_as_string(Path::new(&sentences_path))?)?;
             let embeddings: Vec<Vec<f32>> = sentences.chunks(batch_size).enumerate().map(|(index, sentences)| {
