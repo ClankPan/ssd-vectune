@@ -44,9 +44,9 @@ struct Cli {
 enum Commands {
     SingleShardBuild {
         #[arg(long)]
-        original_vector_path: String,
+        fbin: String,
         #[arg(long)]
-        destination_directory: String,
+        dir: String,
         #[arg(long)]
         max_edge_degrees: usize,
         #[arg(long)]
@@ -82,16 +82,16 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        // cargo run --release  --features debug -- single-shard-build --original-vector-path /Volumes/WD_BLACK/index_deep1b/base.1B.fbin --destination-directory test_vectors/2024_8_23 --max-edge-degrees 70 --seed 12345
+        // cargo run --release  --features debug -- single-shard-build --fbin /Volumes/WD_BLACK/index_deep1b/base.1B.fbin --dir test_vectors/2024_8_23 --max-edge-degrees 70 --seed 12345
         Commands::SingleShardBuild {
-            original_vector_path,
-            destination_directory,
+            fbin,
+            dir,
             // dataset_size,
             max_edge_degrees,
             seed,
         } => {
             /* file path */
-            let dir = Path::new(&destination_directory);
+            let dir = Path::new(&dir);
             let graph_storage_path =
                 // format!("{destination_directory}/graph.bin");
                 dir.join("graph.bin");
@@ -102,10 +102,10 @@ fn main() -> Result<()> {
             #[cfg(feature = "debug")]
             let vector_reader = {
                 println!("dataset_size: {} million", 1);
-                OriginalVectorReader::new_with(&original_vector_path, 1)?
+                OriginalVectorReader::new_with(&fbin, 1)?
             };
             #[cfg(not(feature = "debug"))]
-            let vector_reader = OriginalVectorReader::new(&original_vector_path)?;
+            let vector_reader = OriginalVectorReader::new(&fbin)?;
 
             /* index */
             println!("initializing graph");
