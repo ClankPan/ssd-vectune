@@ -12,5 +12,5 @@ pub mod single_index;
 pub mod storage;
 pub mod utils;
 
-#[cfg(feature = "wasm32-unknown-unknown")]
+#[cfg(not(feature = "wasm32-unknown-unknown"))]
 pub mod embed;
