@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "simd-l1", feature(portable_simd))]
+// #![cfg_attr(feature = "simd-l1", feature(portable_simd))]
 
 // pub mod cache;
 pub mod graph;
@@ -12,5 +12,5 @@ pub mod single_index;
 pub mod storage;
 pub mod utils;
 
-#[cfg(not(feature = "wasm32-unknown-unknown"))]
-pub mod embed;
+// #[cfg(not(feature = "wasm32-unknown-unknown"))]
+// pub mod embed;
