@@ -35,21 +35,27 @@ pub struct EmbeddingModel {
     tokenizer: Tokenizer,
 }
 
+pub struct ModelPrams {
+    pub(crate) weights: Vec<u8>,
+    pub(crate) config: Vec<u8>,
+    pub(crate) tokenizer: Vec<u8>
+}
+
 impl EmbeddingModel {
-    pub fn new(model_dir: &Path) ->  Result<Self> {
-        let mut weights = Vec::new();
-        File::open(model_dir.join("/model.safetensors"))?.read_to_end(&mut weights)?;
+    pub fn new(params: ModelPrams) ->  Result<Self> {
+        // let mut weights = Vec::new();
+        // File::open(model_dir.join("/model.safetensors"))?.read_to_end(&mut weights)?;
 
-        let mut config = Vec::new();
-        File::open(model_dir.join("/config.json"))?.read_to_end(&mut config)?;
+        // let mut config = Vec::new();
+        // File::open(model_dir.join("/config.json"))?.read_to_end(&mut config)?;
 
-        let mut tokenizer = Vec::new();
-        File::open(model_dir.join("/tokenizer.json"))?.read_to_end(&mut tokenizer)?;
+        // let mut tokenizer = Vec::new();
+        // File::open(model_dir.join("/tokenizer.json"))?.read_to_end(&mut tokenizer)?;
 
         let device = &Device::Cpu;
-        let vb = VarBuilder::from_slice_safetensors(&weights, DType::F32, device)?;
-        let config: Config = serde_json::from_slice(&config)?;
-        let tokenizer = Tokenizer::from_bytes(tokenizer).map_err(E::msg)?;
+        let vb = VarBuilder::from_slice_safetensors(&params.weights, DType::F32, device)?;
+        let config: Config = serde_json::from_slice(&params.config)?;
+        let tokenizer = Tokenizer::from_bytes(params.tokenizer).map_err(E::msg)?;
         let bert = BertModel::load(vb, &config)?;
     
         Ok(Self { bert, tokenizer })

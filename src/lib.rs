@@ -11,6 +11,4 @@ pub mod sharded_index;
 pub mod single_index;
 pub mod storage;
 pub mod utils;
-
-#[cfg(feature = "wasm32-unknown-unknown")]
 pub mod embed;
