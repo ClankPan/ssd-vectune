@@ -1,32 +1,9 @@
-#[cfg(feature = "mkl")]
-extern crate intel_mkl_src;
-
-#[cfg(feature = "accelerate")]
-extern crate accelerate_src;
-
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config};
 use tokenizers::{PaddingParams, Tokenizer};
 
-
-// use candle_transformers::models::bert::{BertModel, Config, HiddenAct, DTYPE};
-
 use anyhow::{Error as E, Result};
-// use candle::Tensor;
-// use candle_nn::VarBuilder;
-// use clap::Parser;
-// use hf_hub::{api::sync::Api, Repo, RepoType};
-// use tokenizers::{PaddingParams, Tokenizer};
-
-// const WEIGHTS: &[u8] = include_bytes!("../models/model.safetensors");
-// const CONFIG: &[u8] = include_bytes!("../models/config.json");
-// const TOKENIZER: &[u8] = include_bytes!("../models/tokenizer.json");
-
-// const WEIGHTS: &[u8] = include_bytes!(format!("{}/model.safetensors", env!("MODEL_DIR")));
-// const CONFIG: &[u8] = include_bytes!(env!("MODEL_PATH"));
-// const TOKENIZER: &[u8] = include_bytes!("../models/tokenizer.json");
-
 
 pub struct EmbeddingModel {
     bert: BertModel,
@@ -41,14 +18,6 @@ pub struct ModelPrams {
 
 impl EmbeddingModel {
     pub fn new(params: ModelPrams) ->  Result<Self> {
-        // let mut weights = Vec::new();
-        // File::open(model_dir.join("/model.safetensors"))?.read_to_end(&mut weights)?;
-
-        // let mut config = Vec::new();
-        // File::open(model_dir.join("/config.json"))?.read_to_end(&mut config)?;
-
-        // let mut tokenizer = Vec::new();
-        // File::open(model_dir.join("/tokenizer.json"))?.read_to_end(&mut tokenizer)?;
 
         let device = &Device::Cpu;
         let vb = VarBuilder::from_slice_safetensors(&params.weights, DType::F32, device)?;
