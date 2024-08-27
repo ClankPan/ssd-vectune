@@ -23,6 +23,7 @@ use std::{
 };
 
 use anyhow::Result;
+#[cfg(feature = "embedding-command")]
 use embed::{EmbeddingModel, ModelPrams};
 use graph::Graph;
 // use graph_store::GraphHeader;
@@ -66,6 +67,7 @@ enum Commands {
         query_iter: usize,
     },
 
+    #[cfg(feature = "embedding-command")]
     EmbedSentences {
         #[arg(long)]
         sentences_path: String,
@@ -178,6 +180,7 @@ fn main() -> Result<()> {
         }
 
         // ❯ cargo run --release  -- embed-sentences --sentences-path /Users/clankpan/Develop/Kinic/auto_repository_retriever/debug/3505716682c93b8662fe472c9524243e607b0611_chunk_text_vec.json --batch-size 10 --out test_vectors/topic.fbin
+        #[cfg(feature = "embedding-command")]
         Commands::EmbedSentences { sentences_path, out , batch_size} => {
 
             let model_dir = Path::new("../models");
@@ -225,6 +228,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "embedding-command")]
 fn open_file_as_string(path: &Path) -> Result<String> {
     let mut content = String::new();
     File::open(path)?.read_to_string(&mut content)?;

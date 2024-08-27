@@ -1,21 +1,29 @@
+#[cfg(feature = "embedding-command")]
 use candle_core::{DType, Device, Tensor};
+#[cfg(feature = "embedding-command")]
 use candle_nn::VarBuilder;
+#[cfg(feature = "embedding-command")]
 use candle_transformers::models::bert::{BertModel, Config};
+#[cfg(feature = "embedding-command")]
 use tokenizers::{PaddingParams, Tokenizer};
 
+#[cfg(feature = "embedding-command")]
 use anyhow::{Error as E, Result};
 
+#[cfg(feature = "embedding-command")]
 pub struct EmbeddingModel {
     bert: BertModel,
     tokenizer: Tokenizer,
 }
 
+#[cfg(feature = "embedding-command")]
 pub struct ModelPrams {
     pub(crate) weights: Vec<u8>,
     pub(crate) config: Vec<u8>,
     pub(crate) tokenizer: Vec<u8>
 }
 
+#[cfg(feature = "embedding-command")]
 impl EmbeddingModel {
     pub fn new(params: ModelPrams) ->  Result<Self> {
 
