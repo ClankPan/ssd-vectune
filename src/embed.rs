@@ -18,9 +18,9 @@ pub struct EmbeddingModel {
 
 #[cfg(feature = "embedding-command")]
 pub struct ModelPrams {
-    pub(crate) weights: Vec<u8>,
-    pub(crate) config: Vec<u8>,
-    pub(crate) tokenizer: Vec<u8>
+    pub weights: Vec<u8>,
+    pub config: Vec<u8>,
+    pub tokenizer: Vec<u8>
 }
 
 #[cfg(feature = "embedding-command")]
