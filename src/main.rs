@@ -28,6 +28,7 @@ use embed::{EmbeddingModel, ModelPrams};
 use graph::Graph;
 // use graph_store::GraphHeader;
 use original_vector_reader::{read_ivecs, OriginalVectorReader, OriginalVectorReaderTrait};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use single_index::single_index;
 use vectune::PointInterface;
 
@@ -75,6 +76,8 @@ enum Commands {
         out: String,
         #[arg(long)]
         batch_size: usize,
+        #[arg(long)]
+        model_dir: String
     },
 }
 
@@ -97,7 +100,7 @@ fn main() -> Result<()> {
             let graph_storage_path =
                 // format!("{destination_directory}/graph.bin");
                 dir.join("graph.bin");
-            let backlinks_path = dir.join("backlinks.bin");
+            let backlinks_path = dir.join("backlinks_vec.bincode");
 
             /* read original vectors */
             println!("reading vector file");
@@ -128,9 +131,8 @@ fn main() -> Result<()> {
 
             /* build and write backlinks */
             let (_start_id, backlinks) = single_index(&vector_reader, &mut graph_on_storage, seed);
-            let backlinks_bytes = bincode::serialize(&backlinks)?;
             let mut file = File::create(backlinks_path)?;
-            file.write_all(&backlinks_bytes)?;
+            file.write_all(&bincode::serialize(&backlinks)?)?;
         }
 
 
@@ -181,30 +183,41 @@ fn main() -> Result<()> {
 
         // ❯ cargo run --release  -- embed-sentences --sentences-path /Users/clankpan/Develop/Kinic/auto_repository_retriever/debug/3505716682c93b8662fe472c9524243e607b0611_chunk_text_vec.json --batch-size 10 --out test_vectors/topic.fbin
         #[cfg(feature = "embedding-command")]
-        Commands::EmbedSentences { sentences_path, out , batch_size} => {
+        Commands::EmbedSentences { sentences_path, out , batch_size, model_dir} => {
 
-            let model_dir = Path::new("../models");
+            let model_dir = Path::new(&model_dir);
             let mut weights = Vec::new();
-            File::open(model_dir.join("/model.safetensors"))?.read_to_end(&mut weights)?;
+            File::open(model_dir.join("model.safetensors"))?.read_to_end(&mut weights)?;
 
             let mut config = Vec::new();
-            File::open(model_dir.join("/config.json"))?.read_to_end(&mut config)?;
+            File::open(model_dir.join("config.json"))?.read_to_end(&mut config)?;
 
             let mut tokenizer = Vec::new();
-            File::open(model_dir.join("/tokenizer.json"))?.read_to_end(&mut tokenizer)?;
+            File::open(model_dir.join("tokenizer.json"))?.read_to_end(&mut tokenizer)?;
             let model_params = ModelPrams {
                 weights,
                 config,
                 tokenizer,
             };
 
-            let mut model = EmbeddingModel::new(model_params)?;
+            let model = EmbeddingModel::new(model_params)?;
 
-            let sentences: Vec<String> = serde_json::from_str(&open_file_as_string(Path::new(&sentences_path))?)?;
-            let embeddings: Vec<Vec<f32>> = sentences.chunks(batch_size).enumerate().map(|(index, sentences)| {
-                println!("{index}");
+            println!("load model");
+
+            let sentences: Vec<String> =  bincode::deserialize(&open_file_as_bytes(Path::new(&sentences_path))?)?;
+
+            println!("load sentences");
+
+            
+            let chunks: Vec<&[String]> = sentences.chunks(batch_size).collect();
+            let chunks_len = chunks.len();
+        
+            let embeddings: Vec<Vec<f32>> = chunks.into_par_iter().enumerate().map(|(index, sentences)| {
+                println!("{index} / {}", chunks_len);
                 model.get_embeddings(&sentences.to_vec(), true).expect("msg")
             }).flatten().collect();
+
+            println!("get embeddings");
 
             let num_vectors = embeddings.len();
             let vector_dim = 384;
@@ -229,8 +242,15 @@ fn main() -> Result<()> {
 }
 
 #[cfg(feature = "embedding-command")]
-fn open_file_as_string(path: &Path) -> Result<String> {
+fn _open_file_as_string(path: &Path) -> Result<String> {
     let mut content = String::new();
     File::open(path)?.read_to_string(&mut content)?;
+    Ok(content)
+}
+#[cfg(feature = "embedding-command")]
+fn open_file_as_bytes(path: &Path) -> Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)?;
     Ok(content)
 }

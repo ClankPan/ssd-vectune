@@ -30,33 +30,33 @@ impl EmbeddingModel {
         let device = &Device::Cpu;
         let vb = VarBuilder::from_slice_safetensors(&params.weights, DType::F32, device)?;
         let config: Config = serde_json::from_slice(&params.config)?;
-        let tokenizer = Tokenizer::from_bytes(params.tokenizer).map_err(E::msg)?;
+        let mut tokenizer = Tokenizer::from_bytes(params.tokenizer).map_err(E::msg)?;
         let bert = BertModel::load(vb, &config)?;
-    
-        Ok(Self { bert, tokenizer })
-    }
 
-    pub fn get_embeddings(
-        &mut self,
-        sentences: &Vec<String>,
-        normalize_embeddings: bool,
-    ) -> Result<Vec<Vec<f32>>> {
-        let device = &Device::Cpu;
-        // set padding setting
-        if let Some(pp) = self.tokenizer.get_padding_mut() {
+        if let Some(pp) = tokenizer.get_padding_mut() {
             pp.strategy = tokenizers::PaddingStrategy::BatchLongest
         } else {
             let pp = PaddingParams {
                 strategy: tokenizers::PaddingStrategy::BatchLongest,
                 ..Default::default()
             };
-            self.tokenizer.with_padding(Some(pp));
+            tokenizer.with_padding(Some(pp));
         }
         // set truncation setting TruncationParams
-        let _ = self
-            .tokenizer
+        let _ = tokenizer
             .with_truncation(Some(tokenizers::TruncationParams::default()));
 
+    
+        Ok(Self { bert, tokenizer })
+    }
+
+    pub fn get_embeddings(
+        &self,
+        sentences: &Vec<String>,
+        normalize_embeddings: bool,
+    ) -> Result<Vec<Vec<f32>>> {
+        let device = &Device::Cpu;
+        
         let tokens = self
             .tokenizer
             .encode_batch(sentences.to_vec(), true)
