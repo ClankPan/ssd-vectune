@@ -54,9 +54,12 @@ impl EmbeddingModel {
         &self,
         sentences: &Vec<String>,
         normalize_embeddings: bool,
+        prefix: &str,
     ) -> Result<Vec<Vec<f32>>> {
         let device = &Device::Cpu;
-        
+
+        let sentences: Vec<String> = sentences.into_iter().map(|s| format!("{prefix}: {s}")).collect();
+
         let tokens = self
             .tokenizer
             .encode_batch(sentences.to_vec(), true)

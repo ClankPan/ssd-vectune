@@ -16,10 +16,11 @@ pub mod storage;
 pub mod utils;
 pub mod embed;
 
+use core::num;
 use std::{
     fs::File,
     io::{Read, Write},
-    path::Path,
+    path::Path, sync::atomic::{self, AtomicUsize},
 };
 
 use anyhow::Result;
@@ -28,7 +29,7 @@ use embed::{EmbeddingModel, ModelPrams};
 use graph::Graph;
 // use graph_store::GraphHeader;
 use original_vector_reader::{read_ivecs, OriginalVectorReader, OriginalVectorReaderTrait};
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use rayon::{iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator}, vec};
 use single_index::single_index;
 use vectune::PointInterface;
 
@@ -53,6 +54,17 @@ enum Commands {
         max_edge_degrees: usize,
         #[arg(long)]
         seed: u64,
+    },
+
+    BruteForceSearch {
+        #[arg(long)]
+        sentences_path: String,
+        #[arg(long)]
+        fbin: String,
+        #[arg(long)]
+        query_text: String,
+        #[arg(long)]
+        model_dir: String
     },
 
     RecallRate {
@@ -135,6 +147,40 @@ fn main() -> Result<()> {
             file.write_all(&bincode::serialize(&backlinks)?)?;
         }
 
+        #[cfg(feature = "embedding-command")]
+        Commands::BruteForceSearch { sentences_path, fbin, query_text, model_dir } => {
+            
+            let model = load_model(&model_dir)?;
+            let query_vector = model.get_embeddings(&vec![query_text], true, "query")?[0].clone();
+            let query_point = Point::from_f32_vec(query_vector);
+
+            let vector_reader = OriginalVectorReader::new(&fbin)?;
+            let num_vectors = vector_reader.get_num_vectors();
+
+            let counter = AtomicUsize::new(0);
+
+            let dists: Vec<f32> = (0..num_vectors).into_par_iter().map(|index| {
+                counter.fetch_add(1, atomic::Ordering::Relaxed);
+                // println!("count: {:?}/{num_vectors}", counter);
+                let point = Point::from_f32_vec(vector_reader.read(&index).unwrap());
+                1.0 - point.distance(&query_point)
+            }).collect();
+
+            let sentences: Vec<String> =  bincode::deserialize(&open_file_as_bytes(Path::new(&sentences_path))?)?;
+
+            let mut dists: Vec<(f32, String)> = dists.into_iter().zip(sentences).collect();
+
+            dists.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+
+            let k = 5;
+            let top_k = &dists[0..k];
+
+            for (dist, sentence) in top_k {
+                println!("dist: {}\n{:?}\n\n\n", dist, sentence)
+            }
+
+        }
+
 
         //  cargo run --release  --features debug -- recall-rate --graph-storage-path test_vectors/2024_8_23/graph.bin --ground-truth-ivecs-path test_vectors/gt/deep1M_groundtruth.ivecs --query-fbin-path test_vectors/query.public.10K.fbin --query-iter 10
         Commands::RecallRate {
@@ -205,16 +251,20 @@ fn main() -> Result<()> {
             println!("load model");
 
             let sentences: Vec<String> =  bincode::deserialize(&open_file_as_bytes(Path::new(&sentences_path))?)?;
+            println!("sample: {:?}", &sentences[0..5]);
 
             println!("load sentences");
 
             
             let chunks: Vec<&[String]> = sentences.chunks(batch_size).collect();
             let chunks_len = chunks.len();
+
+            let counter = AtomicUsize::new(0);
         
             let embeddings: Vec<Vec<f32>> = chunks.into_par_iter().enumerate().map(|(index, sentences)| {
-                println!("{index} / {}", chunks_len);
-                model.get_embeddings(&sentences.to_vec(), true).expect("msg")
+                counter.fetch_add(1, atomic::Ordering::Relaxed);
+                println!("{:?} / {}", counter, chunks_len);
+                model.get_embeddings(&sentences.to_vec(), true, "passage").expect("msg")
             }).flatten().collect();
 
             println!("get embeddings");
@@ -253,4 +303,23 @@ fn open_file_as_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut content = Vec::new();
     file.read_to_end(&mut content)?;
     Ok(content)
+}
+
+fn load_model(model_dir: &str) -> Result<EmbeddingModel> {
+    let model_dir = Path::new(&model_dir);
+    let mut weights = Vec::new();
+    File::open(model_dir.join("model.safetensors"))?.read_to_end(&mut weights)?;
+
+    let mut config = Vec::new();
+    File::open(model_dir.join("config.json"))?.read_to_end(&mut config)?;
+
+    let mut tokenizer = Vec::new();
+    File::open(model_dir.join("tokenizer.json"))?.read_to_end(&mut tokenizer)?;
+    let model_params = ModelPrams {
+        weights,
+        config,
+        tokenizer,
+    };
+
+    Ok(EmbeddingModel::new(model_params)?)
 }

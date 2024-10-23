@@ -99,8 +99,10 @@ impl PointInterface for Point {
 #[cfg(not(feature = "simd-l2"))]
 #[cfg(feature = "cos-sim")]
 fn dot_product(vec1: &Point, vec2: &Point) -> f32 {
+    assert_eq!(vec1.0.len(), vec2.0.len());
+    let dim: usize = vec1.0.len();
     let mut result = 0.0;
-    for i in 0..Point::dim() as usize {
+    for i in 0..dim {
         result += vec1.0[i] * vec2.0[i];
     }
     result
@@ -109,8 +111,9 @@ fn dot_product(vec1: &Point, vec2: &Point) -> f32 {
 #[cfg(not(feature = "simd-l2"))]
 #[cfg(feature = "cos-sim")]
 fn norm(vec: &Point) -> f32 {
+    let dim = vec.0.len();
     let mut result = 0.0;
-    for i in 0..Point::dim() as usize {
+    for i in 0..dim {
         result += vec.0[i] * vec.0[i];
     }
     result.sqrt()
