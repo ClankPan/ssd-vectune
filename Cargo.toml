@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "=1.0.86"
 bit-set = "=0.5.3"
 bit-vec = "=0.6.3"
-bytemuck = "=1.16.2"
+bytemuck = "~1.16.2"
 bytesize = "=1.3.0"
 clap = { version = "=4.5.4", features = ["derive"] }
 ext-sort = "=0.1.4"
